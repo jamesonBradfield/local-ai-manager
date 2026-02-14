@@ -1,0 +1,73 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "local-ai-manager"
+version = "2.0.0"
+description = "Extensible local AI management system with automatic GGUF discovery and Steam integration"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "User"}
+]
+keywords = ["llama.cpp", "local-ai", "steam", "gguf", "llm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Systems Administration",
+]
+
+dependencies = [
+    "pydantic>=2.0.0",
+    "rich>=13.0.0",
+    "typer>=0.9.0",
+    "watchdog>=3.0.0",
+    "psutil>=5.9.0",
+    "httpx>=0.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+
+[project.scripts]
+local-ai = "local_ai_manager.cli:main"
+local-ai-server = "local_ai_manager.cli:server_cli"
+local-ai-steam = "local_ai_manager.cli:steam_cli"
+
+[project.urls]
+Homepage = "https://github.com/user/local-ai-manager"
+Repository = "https://github.com/user/local-ai-manager"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/local_ai_manager"]
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "W", "N", "D", "UP", "B", "C4", "SIM"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true

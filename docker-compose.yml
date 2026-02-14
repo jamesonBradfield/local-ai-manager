@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  local-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: local-ai-manager:latest
+    container_name: local-ai
+    restart: unless-stopped
+    
+    ports:
+      - "8080:8080"
+    
+    volumes:
+      # Mount models directory
+      - ./models:/home/localai/models:ro
+      # Persist configuration
+      - local-ai-config:/home/localai/.config/local-ai
+      # Persist cache
+      - local-ai-cache:/home/localai/.cache/local-ai
+      # Logs
+      - local-ai-logs:/home/localai/.local/log
+    
+    environment:
+      - LOCAL_AI_MODEL=auto
+      - LOCAL_AI_CONTEXT_SIZE=131072
+      - LOCAL_AI_GPU_LAYERS=0  # CPU only in container (no GPU passthrough)
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 2G
+
+  # Optional: Web UI (if you have one)
+  # webui:
+  #   image: your-webui-image
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - API_BASE=http://local-ai:8080
+  #   depends_on:
+  #     - local-ai
+
+volumes:
+  local-ai-config:
+  local-ai-cache:
+  local-ai-logs:

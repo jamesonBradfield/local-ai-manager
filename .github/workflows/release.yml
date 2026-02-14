@@ -1,0 +1,178 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          pip install build pyinstaller
+          pip install -e ".[dev]"
+      
+      - name: Build binary
+        run: |
+          pyinstaller --onefile \
+            --name local-ai-linux \
+            --add-data "src/local_ai_manager:local_ai_manager" \
+            src/local_ai_manager/__main__.py
+      
+      - name: Build wheel
+        run: python -m build
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: |
+            dist/local-ai-linux
+            dist/*.whl
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller
+          pip install -e ".[dev]"
+      
+      - name: Build binary (Intel)
+        run: |
+          pyinstaller --onefile \
+            --name local-ai-macos-intel \
+            --target-arch x86_64 \
+            src/local_ai_manager/__main__.py
+      
+      - name: Build binary (Apple Silicon)
+        run: |
+          pyinstaller --onefile \
+            --name local-ai-macos-arm64 \
+            --target-arch arm64 \
+            src/local_ai_manager/__main__.py
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: dist/local-ai-macos-*
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller
+          pip install -e ".[dev]"
+      
+      - name: Build binary
+        run: |
+          pyinstaller --onefile `
+            --name local-ai-windows `
+            src/local_ai_manager/__main__.py
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: dist/local-ai-windows.exe
+
+  build-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: local-ai-manager:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      
+      - name: Export Docker image
+        run: docker save local-ai-manager:latest > local-ai-manager-docker.tar
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: local-ai-manager-docker.tar
+
+  create-release:
+    needs: [build-linux, build-macos, build-windows, build-docker]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      
+      - name: Create checksums
+        run: |
+          cd artifacts
+          sha256sum * > checksums.txt
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## Installation
+            
+            ### Linux/macOS
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash
+            ```
+            
+            ### Windows (PowerShell)
+            ```powershell
+            irm https://raw.githubusercontent.com/${{ github.repository }}/main/Install-LocalAI-Manager.ps1 | iex
+            ```
+            
+            ### Docker
+            ```bash
+            docker pull ghcr.io/${{ github.repository }}:latest
+            ```
+            
+            ### Homebrew (macOS)
+            ```bash
+            brew tap ${{ github.repository_owner }}/local-ai
+            brew install local-ai-manager
+            ```
