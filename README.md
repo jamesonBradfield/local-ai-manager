@@ -1,161 +1,140 @@
 # Local AI Manager
 
-> **⚠️ CROSS-PLATFORM BETA NOTICE** ⚠️
+> **⚠️ BETA SOFTWARE ⚠️**
 > 
-> This project is currently in **BETA** for cross-platform support.
-> - **Windows**: ✅ Production ready - Fully tested and actively used
-> - **Linux**: 🧪 Experimental - Code implemented but not tested
-> - **macOS**: 🧪 Experimental - Code implemented but not tested
+> This is personal tooling that evolved into something shareable. It works for my daily use case but YMMV.
 > 
-> **The Windows version is battle-tested and used daily.** Linux and macOS implementations are functional but need community testing. If you use Linux or macOS, please report issues!
+> **Current Status:**
+> - **Windows + Git Bash**: I use this daily. It works for me.
+> - **Windows + PowerShell**: Should work, tested occasionally  
+> - **Linux/macOS**: Code exists, completely untested. Good luck!
 
-A cross-platform Python-based management system for local LLM inference with automatic model discovery, prompt caching, and Steam game integration.
+A Python-based management system for local LLM inference with automatic model discovery and Steam game integration.
 
-Built to replace PowerShell scripts with a clean, extensible Python architecture.
+Built because I was tired of PowerShell and wanted something cleaner.
 
-## ⚡ Quick Start (Windows - Recommended)
+## What This Actually Is
 
-```powershell
-# Clone and install
+This is tooling I built for myself that:
+- Auto-discovers GGUF models from `~/models`
+- Manages llama-server lifecycle
+- Pauses AI when I launch Steam games (saves VRAM)
+- Has a config file instead of a million PowerShell scripts
+
+I use it daily on Windows with Git Bash. It probably has bugs I haven't hit yet.
+
+## Quick Start (What I Actually Test)
+
+```bash
+# Windows + Git Bash (this is what I use)
 git clone https://github.com/jamesonBradfield/local-ai-manager.git
 cd local-ai-manager
-.\Install-LocalAI-Manager.ps1
+./Install-LocalAI-Manager.ps1
 
-# Start using it immediately
+# If it works:
 local-ai start --background
 local-ai status
 ```
 
-## ✨ Features
+## Requirements
 
-- **Windows Native** - Fully tested on Windows 10/11 with Git Bash and PowerShell
-- **Cross-Platform Foundation** - Linux and macOS support implemented (needs testing)
-- **Automatic GGUF Discovery** - Automatically finds and configures models from `~/models`
-- **JSON Configuration** - Define models, settings, and behaviors in a single config file
-- **Prompt Caching** - Reduces Time To First Token (TTFT) by caching prompt state
-- **Steam Integration** - Automatically stops AI when gaming (saves VRAM) and restores after
-- **Smart Model Selection** - Priority-based auto-selection with nanbeige as primary
-- **Rich CLI** - Beautiful terminal output with tables and panels
-- **Auto-Start on Login** - Automatically start AI server when Windows boots
-- **Custom llama.cpp Arguments** - Pass additional flags for advanced customization
-
-## 📋 Requirements
-
-**Windows (Tested & Supported):**
 - Python 3.10+
-- Windows 10/11
-- llama-server.exe in PATH or `~/bin`
+- Windows (this is what I use)
+- llama-server.exe somewhere in PATH or ~/bin
+- Steam installed via Scoop (for the game detection)
 
-**Linux/macOS (Experimental - See warning above):**
-- Python 3.10+
-- Ubuntu 20.04+ / Fedora 35+ / macOS 12+
-- llama-server binary in PATH or `~/bin`
+Linux/macOS? The code is there but I've never run it. You're in uncharted territory.
 
-## 🚀 Installation
+## What Works
 
-### Windows (Git Bash) - RECOMMENDED
+Based on my actual daily usage:
+
+✅ **Starting/stopping llama-server** - Works  
+✅ **Auto-detecting models** - Works  
+✅ **Steam game detection** - Works with Scoop Steam  
+✅ **Config file management** - Works  
+✅ **Basic CLI** - Works  
+
+🤷 **PowerShell** - Should work, I test it sometimes  
+🤷 **Everything else** - Implemented but not tested  
+
+## Installation
+
+### Windows (Git Bash) - What I Use
 
 ```bash
-# Clone the repository
 git clone https://github.com/jamesonBradfield/local-ai-manager.git
 cd local-ai-manager
-
-# Run installer
 ./Install-LocalAI-Manager.ps1
-
-# Start using immediately
-local-ai --help
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-# Clone the repository
 git clone https://github.com/jamesonBradfield/local-ai-manager.git
 cd local-ai-manager
-
-# Run installer
 .\Install-LocalAI-Manager.ps1
-
-# Start using (bat wrappers work immediately)
-local-ai-start --background
 ```
 
-### Linux / macOS (Experimental)
+### Linux/macOS
 
 ```bash
-# Clone the repository
+# Clone it
 git clone https://github.com/jamesonBradfield/local-ai-manager.git
 cd local-ai-manager
 
-# Run installer (untested - please report issues!)
+# Try the installer (I have no idea if this works)
 ./install.sh
 
-# Test basic functionality
-local-ai --help
+# Let me know what breaks
 ```
 
-## 💻 Usage
+## Usage
 
-### Basic Commands
+### Basic stuff that works
 
 ```bash
-# List available models
-local-ai list-models --verbose
+# List models it found
+local-ai list-models
 
-# Start server with auto-selected model
+# Start with auto-selected model
 local-ai start --background
 
-# Check status
+# Check if it's running
 local-ai status
 
-# Stop server
+# Stop it
 local-ai stop
 
-# Start Steam watcher (auto-manage AI when gaming)
+# Watch Steam and auto-manage AI
 local-ai steam start
 ```
 
-### Enable Auto-Start on Login (Windows)
+### Auto-start on login (Windows)
 
 ```bash
-# Start now and enable auto-start
-local-ai start --background --autostart
-
-# Or manage separately
-local-ai autostart enable --model nanbeige-3b
-local-ai autostart status
+# This should work but admin rights needed
+local-ai autostart enable
 ```
 
-### Custom llama.cpp Arguments
+### Custom args
 
 ```bash
-# Pass any llama-server argument
-local-ai start --extra-args "--repeat-penalty 1.1 --seed 42"
+# Pass extra args to llama-server
+local-ai start --extra-args "--repeat-penalty 1.1"
 ```
 
-## ⚙️ Configuration
+## Configuration
 
-Configuration is stored at:
-- **Windows:** `%USERPROFILE%\.config\local-ai\local-ai-config.json`
-- **Linux:** `~/.config/local-ai/local-ai-config.json`
-- **macOS:** `~/Library/Application Support/local-ai/local-ai-config.json`
-
-### Example Configuration
+Config lives at `~/.config/local-ai/local-ai-config.json`:
 
 ```json
 {
-  "version": "2.0.0",
   "server": {
     "host": "127.0.0.1",
     "port": 8080,
     "models_dir": "~/models",
     "default_model": "nanbeige-3b"
-  },
-  "steam": {
-    "enabled": true,
-    "stop_ai_on_game": true,
-    "restart_ai_after_game": true
   },
   "models": [
     {
@@ -169,123 +148,80 @@ Configuration is stored at:
 }
 ```
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
-### 'local-ai' Command Not Found
+### Command not found
 
-**Git Bash:**
 ```bash
-# Shell scripts should work immediately
+# Check if it's in PATH
 which local-ai
 
-# If not in PATH, add manually
+# If not, add ~/.local/bin to PATH
 export PATH="$PATH:$HOME/.local/bin"
 ```
 
-**PowerShell:**
-```powershell
-# Use bat wrappers (work immediately)
-local-ai-start --help
-
-# Or restart terminal for PATH to update
-```
-
-### Server Won't Start
+### Server won't start
 
 ```bash
 # Check logs
 cat ~/.local/log/llama-server-*.log
 
-# Verify model exists
-local-ai list-models --verbose
-
-# Test without background
-local-ai start
+# Try running llama-server directly to see the error
+llama-server.exe --model ~/models/your-model.gguf
 ```
 
-### Steam Watcher Not Detecting Games
+### Steam detection not working
 
-**Windows (Scoop):**
-```bash
-# Verify Steam log path exists
-ls ~/scoop/apps/steam/current/logs/gameprocess_log.txt
+Make sure Steam is installed via Scoop and logs to `~/scoop/apps/steam/current/logs/gameprocess_log.txt`
 
-# Check logs are being written
-tail -f ~/scoop/apps/steam/current/logs/gameprocess_log.txt
-```
+## What's Actually Tested
 
-## 🏗️ Architecture
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Core server management | ✅ Works | Daily use |
+| Git Bash integration | ✅ Works | Daily use |
+| Model auto-discovery | ✅ Works | Daily use |
+| Steam game detection | ✅ Works | With Scoop |
+| Config file | ✅ Works | JSON-based |
+| PowerShell | ⚠️ Sometimes | Tested occasionally |
+| Autostart | ⚠️ Should work | Needs admin rights |
+| Linux | ❓ Unknown | Code exists, never ran |
+| macOS | ❓ Unknown | Code exists, never ran |
 
-```
-local-ai-manager/
-├── src/local_ai_manager/
-│   ├── __init__.py              # Package initialization
-│   ├── models.py                # Pydantic configuration models
-│   ├── defaults.py              # Default model configurations
-│   ├── config.py                # Config file I/O
-│   ├── registry.py              # GGUF discovery & ModelRegistry
-│   ├── server.py                # LlamaServerManager
-│   ├── steam_watcher.py         # SteamLogHandler & SteamWatcher
-│   ├── platform.py              # Cross-platform abstraction layer
-│   └── cli.py                   # Typer CLI with Rich output
-├── install.sh                   # Linux/macOS installer (experimental)
-├── Install-LocalAI-Manager.ps1  # Windows installer (tested)
-├── Dockerfile                   # Docker support
-├── docker-compose.yml           # Docker Compose
-└── README.md                    # This file
-```
+## Contributing
 
-## 🚧 Platform Support Status
+Found a bug? That's expected. Open an issue.
 
-| Platform | Status | Notes |
-|----------|--------|-------|
-| **Windows 10/11** | ✅ Production | Fully tested, actively used daily |
-| **Linux (systemd)** | 🧪 Experimental | Code ready, needs community testing |
-| **macOS (launchd)** | 🧪 Experimental | Code ready, needs community testing |
+Want to fix Linux/macOS support? That would be awesome. PRs welcome.
 
-### Why the Experimental Status?
+Want to add features? Go for it, just don't break my daily workflow.
 
-The Windows implementation has been running daily for months. The Linux/macOS implementations:
-- Share the same Python codebase
-- Have platform-specific abstractions implemented
-- Use systemd/launchd for autostart
-- **Need real-world testing and bug reports**
+## Why I Built This
 
-If you use Linux or macOS, please test and [open an issue](https://github.com/jamesonBradfield/local-ai-manager/issues) with your findings!
+I had a dozen PowerShell scripts that were:
+- Hard to maintain
+- Scattered everywhere
+- Required editing to change models
+- Didn't handle Steam games well
 
-## 🤝 Contributing
+Now I have:
+- One config file
+- A simple CLI
+- Auto-detection of models
+- Steam integration
 
-We need help testing Linux and macOS! If you'd like to contribute:
+It's not perfect but it's better than what I had.
 
-1. **Test on Linux/macOS** - Try the install script and report issues
-2. **Fix platform bugs** - Help debug platform-specific issues
-3. **Add package managers** - Create packages for apt/dnf/pacman/Homebrew
-4. **Documentation** - Help improve cross-platform docs
+## License
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+MIT - Do whatever you want. If it breaks, you get to keep both pieces.
 
-## 📦 Package Managers (Future)
+## Support
 
-Planned distribution methods:
-- **Windows:** Scoop, Chocolatey
-- **macOS:** Homebrew
-- **Linux:** apt, dnf, pacman, AUR
+This is a personal project I share because why not. I fix bugs when they annoy me. Use at your own risk.
 
-## 📝 License
-
-MIT License - See [LICENSE](LICENSE) file
-
-## 🙏 Acknowledgments
-
-- Built for personal use and shared with the community
-- Uses [llama.cpp](https://github.com/ggerganov/llama.cpp) for inference
-- Inspired by the need to escape PowerShell hell
-
-## 💬 Support
-
-- **Issues:** [GitHub Issues](https://github.com/jamesonBradfield/local-ai-manager/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/jamesonBradfield/local-ai-manager/discussions)
+If you want something production-ready with enterprise support, this isn't it.
 
 ---
 
-**Note:** This is a personal project that evolved into something shareable. Windows users can use it confidently. Linux/macOS users, please help us make it rock-solid on your platform!
+**TL;DR:** Works for me on Windows with Git Bash. Everything else is bonus territory.
