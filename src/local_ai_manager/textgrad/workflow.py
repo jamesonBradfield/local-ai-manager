@@ -144,13 +144,19 @@ class TextgradWorkflow:
                         final_output=output,
                     )
 
-                # 3. Backward pass (use empty string as fallback if no target)
-                gradients = await self.llm_function.backward(output, target or "", variables)
+                # 3. Backward pass (skip if no target - can't compute meaningful gradients)
+                if target is not None:
+                    gradients = await self.llm_function.backward(output, target, variables)
 
-                # Apply gradients to variables
-                for var in variables:
-                    if var.role.value in gradients:
-                        var.backward(gradients[var.role.value])
+                    # Apply gradients to variables
+                    for var in variables:
+                        if var.role.value in gradients:
+                            var.backward(gradients[var.role.value])
+                else:
+                    # No target provided - cannot compute gradients
+                    # This happens in non-interactive mode without a reference target
+                    # The workflow continues but skips gradient-based optimization
+                    gradients = {}
 
                 # 4. Optimizer step
                 variables = await self.optimizer.step(variables)
