@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .platform import platform_instance
+from .system_platform import platform_instance
 
 
 class QuantizationType(str, Enum):

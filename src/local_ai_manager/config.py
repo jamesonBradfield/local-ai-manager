@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .defaults import DEFAULT_MODELS
 from .models import SystemConfig
-from .platform import platform_instance
+from .system_platform import platform_instance
 
 
 CONFIG_FILENAME = "local-ai-config.json"
