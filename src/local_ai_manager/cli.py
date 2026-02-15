@@ -652,6 +652,82 @@ def optimize(
 
 
 # Legacy CLI aliases for backward compatibility
+def textgrad_repair(
+    failed_command: str = typer.Option(..., "--command", "-c", help="The command that failed"),
+    error_output: str = typer.Option(
+        "", "--error", "-e", help="Error output from the failed command"
+    ),
+    context: str = typer.Option(
+        "", "--context", help="Additional context about what you were trying to do"
+    ),
+    forward_model: str = typer.Option("auto", "--forward-model", "-f", help="Model for generation"),
+    backward_model: str | None = typer.Option(
+        None, "--backward-model", "-b", help="Model for critique"
+    ),
+) -> None:
+    """Use textgrad to repair a failed tool command and suggest a fix."""
+    import asyncio
+    from .config import load_config
+    from .registry import ModelRegistry
+    from .textgrad.function import LLMFunction
+    from .textgrad.variable import TextVariable, TextRole
+    from rich.console import Console
+    from rich.panel import Panel
+
+    console = Console()
+    config = load_config()
+    registry = ModelRegistry(config)
+
+    async def run_repair():
+        if forward_model == "auto":
+            selection = registry.get_auto_selected_model()
+            if not selection:
+                console.print("[red]No models available![/red]")
+                raise typer.Exit(1)
+            forward_model_id = selection[0]
+        else:
+            forward_model_id = forward_model
+
+        console.print(f"[cyan]Using model: {forward_model_id}[/cyan]")
+
+        llm = LLMFunction(
+            forward_model=forward_model_id,
+            backward_model=backward_model or forward_model_id,
+        )
+
+        repair_prompt = f"""You are debugging a failed command execution.
+
+The command that failed:
+```
+{failed_command}
+```
+
+Error output:
+```
+{error_output}
+```
+
+Context about what you were trying to do:
+{context}
+
+Your task:
+1. Analyze why the command failed
+2. Generate a corrected version of the command that would work
+3. Explain what was wrong and how to fix it
+
+Respond with a JSON object containing:
+- "fixed_command": the corrected command
+- "explanation": brief explanation of what was wrong
+- "suggestion": a one-sentence suggestion for the user"""
+
+        user_input = TextVariable(value="", role=TextRole.USER, requires_grad=False)
+        output = await llm.forward([user_input], system_prompt=repair_prompt)
+
+        console.print(Panel(output, title="Textgrad Repair Analysis"))
+
+    asyncio.run(run_repair())
+
+
 def server_cli() -> None:
     """Server management CLI (legacy entry point)."""
     app()
