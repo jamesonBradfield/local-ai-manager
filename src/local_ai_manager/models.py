@@ -63,7 +63,8 @@ class ModelDefinition(BaseModel):
     mlock: bool = Field(default=True, description="Lock model in memory")
     mmap: bool = Field(default=True, description="Use memory mapping")
     cont_batching: bool = Field(default=True, description="Enable continuous batching")
-    
+    cache_type_k: str | None = Field(default=None, description="KV cache type for K (f16, q8_0, q4_0)")
+    cache_type_v: str | None = Field(default=None, description="KV cache type for V (f16, q8_0, q4_0)")   
     # Sampling parameters
     temperature: float = Field(default=0.6, ge=0.0, le=2.0)
     top_p: float = Field(default=0.95, ge=0.0, le=1.0)

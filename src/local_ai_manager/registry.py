@@ -50,7 +50,15 @@ class ModelRegistry:
         return None
     
     def get_auto_selected_model(self) -> tuple[str, ModelDefinition, Path] | None:
-        """Auto-select the best available model based on priority."""
+        """Auto-select the best available model."""
+        
+        # 1. Check configured default model first
+        default_id = self.config.server.default_model
+        if default_id and self.is_model_available(default_id):
+            model_def, path = self._available[default_id]
+            return (default_id, model_def, path)
+
+        # 2. Fallback to priority sort
         available = self.get_available_models()
         if not available:
             return None

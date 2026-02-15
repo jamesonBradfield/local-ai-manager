@@ -109,7 +109,12 @@ class LlamaServerManager:
             args.append("--no-mmap")
         if model_def.cont_batching:
             args.append("--cont-batching")
-        
+       
+        if model_def.cache_type_k:
+            args.extend(["--cache-type-k", model_def.cache_type_k])
+        if model_def.cache_type_v:
+            args.extend(["--cache-type-v", model_def.cache_type_v])
+
         # Note: Prompt caching via --prompt-cache flag is not supported
         # in this version of llama-server. Cache is handled via the API.
         
