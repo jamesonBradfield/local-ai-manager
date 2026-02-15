@@ -59,6 +59,41 @@ class TextOptimizer:
         self.history: list[OptimizerStep] = []
         self.momentum_buffer: dict[str, str] = {}
 
+    def _apply_momentum(self, var: TextVariable) -> str:
+        """Apply momentum to gradient.
+
+        Note: String-based momentum is unstable. This naive concatenation
+        can cause infinite growth (e.g., "Fix this. Additionally: Fix this.")
+        Use momentum=0.0 for stable behavior until embedding-based
+        momentum is implemented.
+
+        Args:
+            var: Variable with current gradient
+
+        Returns:
+            Momentum-adjusted gradient
+        """
+        role = var.role.value
+
+        if role not in self.momentum_buffer:
+            self.momentum_buffer[role] = var.grad or ""
+            return var.grad or ""
+
+        # Combine current gradient with momentum buffer
+        prev = self.momentum_buffer[role]
+        curr = var.grad or ""
+
+        # Simple text combination (in practice, might use embeddings)
+        if self.momentum >= 0.5:
+            # Keep more of previous gradient
+            combined = f"{prev} Additionally: {curr}"
+        else:
+            # Keep more of current gradient
+            combined = f"{curr} (Previous concern: {prev})"
+
+        self.momentum_buffer[role] = combined
+        return combined
+
     async def step(
         self,
         variables: list[TextVariable],
@@ -110,36 +145,6 @@ class TextOptimizer:
             updated.append(var)
 
         return updated
-
-    def _apply_momentum(self, var: TextVariable) -> str:
-        """Apply momentum to gradient.
-
-        Args:
-            var: Variable with current gradient
-
-        Returns:
-            Momentum-adjusted gradient
-        """
-        role = var.role.value
-
-        if role not in self.momentum_buffer:
-            self.momentum_buffer[role] = var.grad or ""
-            return var.grad or ""
-
-        # Combine current gradient with momentum buffer
-        prev = self.momentum_buffer[role]
-        curr = var.grad or ""
-
-        # Simple text combination (in practice, might use embeddings)
-        if self.momentum >= 0.5:
-            # Keep more of previous gradient
-            combined = f"{prev} Additionally: {curr}"
-        else:
-            # Keep more of current gradient
-            combined = f"{curr} (Previous concern: {prev})"
-
-        self.momentum_buffer[role] = combined
-        return combined
 
     async def _scale_gradient(
         self,

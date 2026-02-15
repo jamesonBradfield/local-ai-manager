@@ -447,12 +447,25 @@ class WindowsPlatform(PlatformInterface):
         return None
 
     def kill_processes(self, process_names: list[str]) -> None:
-        """Kill processes by name on Windows."""
+        """Kill processes by name on Windows.
+
+        First attempts graceful termination, then falls back to force kill.
+        """
         import subprocess
 
         for name in process_names:
             try:
-                subprocess.run(["taskkill", "/F", "/IM", f"{name}.exe"], capture_output=True)
+                # First try graceful termination (without /F)
+                result = subprocess.run(
+                    ["taskkill", "/IM", f"{name}.exe"],
+                    capture_output=True,
+                )
+                # If graceful failed, try force kill
+                if result.returncode != 0:
+                    subprocess.run(
+                        ["taskkill", "/F", "/IM", f"{name}.exe"],
+                        capture_output=True,
+                    )
             except FileNotFoundError:
                 pass
 

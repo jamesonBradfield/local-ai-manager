@@ -565,7 +565,88 @@ def textgrad_show(
         console.print(f"\n[yellow]History:[/yellow] {len(workflow.history)} iterations")
 
 
-def main() -> None:
+@app.command()
+def optimize(
+    prompt: str = typer.Option(..., "--prompt", "-p", help="Initial system prompt to optimize"),
+    user_context: str = typer.Option("", "--context", "-c", help="User context/query"),
+    forward_model: str = typer.Option(
+        "auto",
+        "--forward-model",
+        "-f",
+        help="Model for generation (default: auto-select)",
+    ),
+    backward_model: str | None = typer.Option(
+        None,
+        "--backward-model",
+        "-b",
+        help="Model for critique (default: same as forward)",
+    ),
+    optimizer_model: str | None = typer.Option(
+        None,
+        "--optimizer-model",
+        "-o",
+        help="Model for optimization (default: same as forward)",
+    ),
+    max_iterations: int = typer.Option(
+        10,
+        "--max-iterations",
+        "-i",
+        help="Maximum optimization iterations",
+    ),
+    interactive: bool = typer.Option(
+        False,
+        "--interactive",
+        help="Enable interactive diff editing mode",
+    ),
+) -> None:
+    """Optimize a system prompt using textgrad."""
+    import asyncio
+    from .models import TextgradWorkflow as WorkflowConfig
+
+    config = load_config()
+    registry = ModelRegistry(config)
+
+    if forward_model == "auto":
+        selected = registry.get_auto_selected_model()
+        if selected:
+            _, model_def, _ = selected
+            forward_model = model_def.id
+        else:
+            console.print("[red]No models available for auto-selection[/red]")
+            raise typer.Exit(1)
+
+    workflow_config = WorkflowConfig(
+        id="cli-optimize",
+        name="CLI Optimize",
+        forward_model_id=forward_model,
+        backward_model_id=backward_model or forward_model,
+        optimizer_model_id=optimizer_model or forward_model,
+        max_iterations=max_iterations,
+        initial_prompt=prompt,
+    )
+
+    workflow = TextgradWorkflow(workflow_config)
+
+    async def run_optimization():
+        result = await workflow.optimize(
+            initial_prompt=prompt,
+            user_context=user_context,
+            interactive=interactive,
+        )
+
+        if result.error:
+            console.print(f"[red]Error: {result.error}[/red]")
+            raise typer.Exit(1)
+
+        if result.converged:
+            console.print("\n[green]✓ Optimization converged![/green]")
+        else:
+            console.print("\n[yellow]⚠ Maximum iterations reached without convergence[/yellow]")
+
+        console.print(f"\nIterations: {result.iterations}")
+        console.print(Panel(result.final_prompt, title="Optimized Prompt"))
+
+    asyncio.run(run_optimization())
     """Main entry point."""
     app()
 

@@ -171,12 +171,14 @@ TARGET OUTPUT:
 INPUT VARIABLES:
 {chr(10).join(var_descriptions)}
 
-Provide specific, actionable feedback for each variable. Format your response as:
+Provide your feedback as a JSON object with the variable role as the key and the feedback as the value. Example format:
 
-VARIABLE 1 (role): [specific feedback]
-VARIABLE 2 (role): [specific feedback]
+{{
+    "system": "Make the prompt more concise",
+    "user": "Add more context about the user's domain"
+}}
 
-Be concise but detailed in your feedback."""
+Respond ONLY with valid JSON, no additional text:"""
 
         return prompt
 
@@ -185,33 +187,51 @@ Be concise but detailed in your feedback."""
         critique: str,
         variables: list[TextVariable],
     ) -> dict[str, str]:
-        """Parse critique into per-variable gradients."""
+        """Parse critique into per-variable gradients.
+
+        Expects JSON format from LLM response.
+        Falls back to string splitting if JSON parsing fails.
+        """
         gradients = {}
 
-        # Simple parsing - look for "VARIABLE N" or "(role):" patterns
+        # Try to parse as JSON first
+        try:
+            # Find JSON block in the response
+            critique_stripped = critique.strip()
+            if "{" in critique_stripped and "}" in critique_stripped:
+                start = critique_stripped.find("{")
+                end = critique_stripped.rfind("}") + 1
+                json_str = critique_stripped[start:end]
+                parsed = json.loads(json_str)
+
+                if isinstance(parsed, dict):
+                    for var in variables:
+                        if var.requires_grad and var.role.value in parsed:
+                            gradients[var.role.value] = str(parsed[var.role.value])
+                    return gradients
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # Fallback: simple parsing - look for "VARIABLE N" or "(role):" patterns
         lines = critique.split("\n")
 
         for i, var in enumerate(variables):
             if not var.requires_grad:
                 continue
 
-            # Try to find gradient for this variable
             role_key = var.role.value
 
             for line in lines:
                 line = line.strip()
-                # Match patterns like "VARIABLE 1 (system): feedback" or "system: feedback"
                 if f"({role_key}):" in line.lower() or line.lower().startswith(f"{role_key}:"):
-                    # Extract text after the colon
                     if ":" in line:
                         gradient = line.split(":", 1)[1].strip()
                         if gradient:
                             gradients[role_key] = gradient
                             break
 
-            # If no specific gradient found, use entire critique
             if role_key not in gradients and var.requires_grad:
-                gradients[role_key] = critique[:500]  # First 500 chars
+                gradients[role_key] = critique[:500]
 
         return gradients
 

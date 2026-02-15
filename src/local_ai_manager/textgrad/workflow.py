@@ -114,6 +114,7 @@ class TextgradWorkflow:
         ]
 
         history = []
+        output = ""
 
         try:
             for iteration in range(self.config.max_iterations):
@@ -133,8 +134,8 @@ class TextgradWorkflow:
                 if progress_callback:
                     progress_callback(iteration, output, target)
 
-                # Check for convergence
-                if self._check_convergence(output, target):
+                # Check for convergence (skip if no target provided)
+                if target is not None and self._check_convergence(output, target):
                     return WorkflowResult(
                         final_prompt=variables[0].value,
                         iterations=iteration + 1,
@@ -143,8 +144,8 @@ class TextgradWorkflow:
                         final_output=output,
                     )
 
-                # 3. Backward pass
-                gradients = await self.llm_function.backward(output, target, variables)
+                # 3. Backward pass (use empty string as fallback if no target)
+                gradients = await self.llm_function.backward(output, target or "", variables)
 
                 # Apply gradients to variables
                 for var in variables:
@@ -188,7 +189,7 @@ class TextgradWorkflow:
                 error=str(e),
             )
 
-    async def _get_user_feedback(self, output: str, iteration: int) -> str:
+    async def _get_user_feedback(self, output: str, iteration: int) -> str | None:
         """Get user feedback on current output.
 
         This method should be overridden or use the DiffEditor
@@ -199,33 +200,32 @@ class TextgradWorkflow:
             iteration: Current iteration number
 
         Returns:
-            Target/desired output
+            Target/desired output, or None if no target provided
         """
-        # Default: assume converged (no changes needed)
-        # In practice, this should use DiffEditor
-        return output
+        # Default: no target provided - user must supply one
+        # In interactive mode, use DiffEditor to get target
+        # In non-interactive mode, this causes the loop to continue
+        # until max_iterations or manual convergence
+        return None
 
-    async def _auto_convergence_check(self, output: str) -> str:
+    async def _auto_convergence_check(self, output: str) -> str | None:
         """Automatic convergence check (non-interactive mode).
 
         Uses heuristics or previous target to determine convergence.
+        Returns None if no target is available (non-interactive mode).
 
         Args:
             output: Current model output
 
         Returns:
-            Target output (same as input if converged)
+            Target output, or None if no target provided
         """
-        # Simple heuristic: if output is same as last few, converged
-        if len(self._convergence_history) >= 3:
-            recent = self._convergence_history[-3:]
-            if all(r == output for r in recent):
-                return output  # Converged
+        # In non-interactive mode without a user-provided target,
+        # we cannot determine convergence. Return None to skip
+        # the convergence check and continue optimizing.
+        return None
 
-        self._convergence_history.append(output)
-        return output  # Not converged yet
-
-    def _check_convergence(self, output: str, target: str) -> bool:
+    def _check_convergence(self, output: str, target: str | None) -> bool:
         """Check if output has converged to target.
 
         Args:
@@ -235,6 +235,9 @@ class TextgradWorkflow:
         Returns:
             True if converged
         """
+        if target is None:
+            return False
+
         # Exact match
         if output == target:
             return True
