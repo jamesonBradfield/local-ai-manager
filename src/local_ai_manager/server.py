@@ -170,10 +170,20 @@ class LlamaServerManager:
         ]
 
         if model_def.cache_type_k:
-            args.extend(["--cache-type-k", model_def.cache_type_k.value])
+            val = (
+                model_def.cache_type_k.value
+                if hasattr(model_def.cache_type_k, "value")
+                else model_def.cache_type_k
+            )
+            args.extend(["--cache-type-k", val])
 
         if model_def.cache_type_v:
-            args.extend(["--cache-type-v", model_def.cache_type_v.value])
+            val = (
+                model_def.cache_type_v.value
+                if hasattr(model_def.cache_type_v, "value")
+                else model_def.cache_type_v
+            )
+            args.extend(["--cache-type-v", val])
 
         if model_def.flash_attn:
             args.append("--flash-attn")

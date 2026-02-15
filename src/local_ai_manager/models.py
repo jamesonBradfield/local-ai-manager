@@ -125,6 +125,7 @@ class ServerConfig(BaseModel):
 
     # Behavior
     auto_start: bool = Field(default=False, description="Auto-start server on boot")
+    auto_shutdown_on_exit: bool = Field(default=False, description="Auto-shutdown server on exit")
     default_model: str | None = Field(default=None, description="Default model to use")
 
     @field_validator("models_dir", "cache_dir", "log_dir", "llama_server_path", mode="before")
