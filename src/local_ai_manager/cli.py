@@ -667,6 +667,9 @@ def textgrad_repair(
     backward_model: str | None = typer.Option(
         None, "--backward-model", "-b", help="Model for critique"
     ),
+    no_lsp: bool = typer.Option(
+        False, "--no-lsp", help="Skip LSP/diagnostic errors (e.g., pyright, ruff)"
+    ),
 ) -> None:
     """Use textgrad to repair a failed tool command and suggest a fix."""
     import asyncio
@@ -678,6 +681,32 @@ def textgrad_repair(
     from rich.panel import Panel
 
     console = Console()
+
+    # Filter out LSP errors if --no-lsp is set
+    if no_lsp:
+        lsp_patterns = [
+            "pyright",
+            "ruff",
+            "mypy",
+            "pylint",
+            "eslint",
+            "typescript",
+            "lsp",
+            "diagnostic",
+            "Line ",
+            "Column ",
+        ]
+        filtered_errors = []
+        for line in error_output.splitlines():
+            if not any(pattern.lower() in line.lower() for pattern in lsp_patterns):
+                filtered_errors.append(line)
+        error_output = "\n".join(filtered_errors)
+        if not error_output.strip():
+            console.print(
+                "[yellow]No non-LSP errors found. Use without --no-lsp to see all errors.[/yellow]"
+            )
+            return
+
     config = load_config()
     registry = ModelRegistry(config)
 
@@ -747,6 +776,9 @@ def repair_skill(
     context: str = typer.Option("", "--context", help="What you were trying to do"),
     name: str = typer.Option("", "--name", "-n", help="Skill name (auto-generated if empty)"),
     forward_model: str = typer.Option("auto", "--forward-model", "-f", help="Model for generation"),
+    no_lsp: bool = typer.Option(
+        False, "--no-lsp", help="Skip LSP/diagnostic errors (e.g., pyright, ruff)"
+    ),
 ) -> None:
     """Use textgrad to repair a failed command and save as a reusable skill."""
     import asyncio
@@ -758,6 +790,32 @@ def repair_skill(
     from .textgrad.variable import TextVariable, TextRole
 
     console = Console()
+
+    # Filter out LSP errors if --no-lsp is set
+    if no_lsp:
+        lsp_patterns = [
+            "pyright",
+            "ruff",
+            "mypy",
+            "pylint",
+            "eslint",
+            "typescript",
+            "lsp",
+            "diagnostic",
+            "Line ",
+            "Column ",
+        ]
+        filtered_errors = []
+        for line in error_output.splitlines():
+            if not any(pattern.lower() in line.lower() for pattern in lsp_patterns):
+                filtered_errors.append(line)
+        error_output = "\n".join(filtered_errors)
+        if not error_output.strip():
+            console.print(
+                "[yellow]No non-LSP errors found. Use without --no-lsp to see all errors.[/yellow]"
+            )
+            return
+
     config = load_config()
     registry = ModelRegistry(config)
 
