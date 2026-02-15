@@ -1,107 +1,157 @@
-"""Llama server management with prompt caching support."""
+"""Llama server lifecycle management and HTTP API wrapper."""
 
 from __future__ import annotations
 
+import asyncio
+import json
+import shlex
 import subprocess
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import httpx
 import psutil
+from rich.console import Console
 
-from .models import ModelDefinition, ServerConfig
+if TYPE_CHECKING:rom .config import ServerConfig
+from .models import ModelDefinition
+
+
+console = Console()
 
 
 class LlamaServerManager:
-    """Manages llama-server process lifecycle with prompt caching."""
+    """Manages llama-server process lifecycle and HTTP API interactions."""
 
     def __init__(self, config: ServerConfig) -> None:
-        self.config = config
-        self._process: subprocess.Popen | None = None
-
-    def is_running(self) -> bool:
-        """Check if llama-server is currently running."""
-        for proc in psutil.process_iter(["name"]):
-            try:
-                if proc.info["name"] and "llama-server" in proc.info["name"]:
-                    return True
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
-        return False
-
-    def stop(
-        self, save_cache: bool = False, cache_path: Path | None = None, timeout: float = 5.0
-    ) -> bool:
-        """Stop the llama-server process gracefully with timeout.
+        """Initialize server manager.
 
         Args:
-            save_cache: Whether to save the prompt cache before stopping
-            cache_path: Custom path for the cache file
-            timeout: Seconds to wait for graceful shutdown before force kill
+            config: Server configuration
+        """
+        self.config = config
+        self.pid_file = config.cache_dir / "server.pid"
+        self._register_shutdown_handler()
+
+    def is_running(self) -> bool:
+        """Check if llama-server is running."""
+        if not self.pid_file.exists():
+            return False
+
+        try:
+            pid = int(self.pid_file.read_text().strip())
+            process = psutil.Process(pid)
+
+            if not process.is_running():
+                self.pid_file.unlink()
+                return False
+
+            if "llama" not in process.name().lower():
+                self.pid_file.unlink()
+                return False
+
+            return True
+
+        except (psutil.NoSuchProcess, ValueError, FileNotFoundError):
+            if self.pid_file.exists():
+                self.pid_file.unlink()
+            return False
+
+    def stop(self, save_cache: bool = False) -> bool:
+        """Stop the server process.
+
+        Args:
+            save_cache: Whether to preserve the model cache
 
         Returns:
-            True if all processes stopped, False if force kill was needed
+            True if stopped successfully
         """
         if not self.is_running():
             return True
 
-        # Find and terminate all llama-server processes
-        terminated = []
-        for proc in psutil.process_iter(["name", "pid"]):
-            try:
-                if proc.info["name"] and "llama-server" in proc.info["name"]:
-                    proc.terminate()
-                    terminated.append(proc)
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
+        try:
+            pid = int(self.pid_file.read_text().strip())
+            process = psutil.Process(pid)
 
-        # Wait for graceful shutdown with timeout
-        gone, alive = psutil.wait_procs(terminated, timeout=timeout)
+            if not save_cache:
+                # Find and terminate the process without cache
+                parent = psutil.Process(pid)
+                children = parent.children(recursive=True)
+                for child in children:
+                    child.terminate()
+                parent.terminate()
 
-        # Force kill any remaining
-        for proc in alive:
-            try:
-                proc.kill()
-            except psutil.NoSuchProcess:
-                pass
+                gone, alive = psutil.wait_procs(children + [parent], timeout=5)
+                for p in alive:
+                    p.kill()
+            else:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except psutil.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=2)
 
-        return len(alive) == 0
+            if self.pid_file.exists():
+                self.pid_file.unlink()
+
+            return True
+
+        except Exception as e:
+            console.print(f"[red]Error stopping server: {e}[/red]")
+            return False
 
     def start(
         self,
         model_def: ModelDefinition,
         model_path: Path,
-        background: bool = False,
-        use_cache: bool = True,
+        background: bool = True,
+        use_cache: bool = False,
         extra_args: list[str] | None = None,
     ) -> bool:
-        """Start llama-server with the given model and configuration."""
+        """Start the server process.
+
+        Args:
+            model_def: Model definition
+            model_path: Path to model file
+            background: Run in background
+            use_cache: Use cached model weights
+            extra_args: Additional server arguments
+
+        Returns:
+            True if started successfully
+        """
         if self.is_running():
-            self.stop(save_cache=model_def.save_cache_on_exit)
-            time.sleep(1)
+            console.print("[yellow]Server is already running[/yellow]")
+            return True
+
+        if not model_path.exists():
+            console.print(f"[red]Model file not found: {model_path}[/red]")
+            return False
 
         args = self._build_args(model_def, model_path, use_cache, extra_args)
 
-        if background:
-            return self._start_background(args, model_def)
-        return self._start_foreground(args)
+        try:
+            if background:
+                return self._start_background(args)
+            return self._start_foreground(args)
+        except Exception as e:
+            console.print(f"[red]Failed to start server: {e}[/red]")
+            return False
 
     def _build_args(
         self,
         model_def: ModelDefinition,
         model_path: Path,
         use_cache: bool,
-        extra_args: list[str] | None = None,
+        extra_args: list[str] | None,
     ) -> list[str]:
-        """Build llama-server command-line arguments."""
+        """Build server command arguments."""
         args = [
             str(self.config.llama_server_path),
             "--model",
             str(model_path),
-            "--host",
-            self.config.host,
-            "--port",
-            str(self.config.port),
             "--ctx-size",
             str(model_def.ctx_size),
             "--n-gpu-layers",
@@ -112,81 +162,76 @@ class LlamaServerManager:
             str(model_def.batch_size),
             "--ubatch-size",
             str(model_def.ubatch_size),
-            "--parallel",
-            "1",
-            "--temp",
-            str(model_def.temperature),
-            "--top-p",
-            str(model_def.top_p),
-            "--top-k",
-            str(model_def.top_k),
-            "--alias",
-            model_def.id,
+            "--host",
+            self.config.host,
+            "--port",
+            str(self.config.port),
         ]
 
-        # Memory & performance flags
-        if model_def.flash_attn:
-            args.extend(["--flash-attn", "on"])
-        if model_def.mlock:
-            args.append("--mlock")
-        if not model_def.mmap:
-            args.append("--no-mmap")
-        if model_def.cont_batching:
-            args.append("--cont-batching")
-
         if model_def.cache_type_k:
-            args.extend(["--cache-type-k", model_def.cache_type_k])
+            args.extend(["--cache-type-k", model_def.cache_type_k.value])
+
         if model_def.cache_type_v:
-            args.extend(["--cache-type-v", model_def.cache_type_v])
+            args.extend(["--cache-type-v", model_def.cache_type_v.value])
 
-        # Note: Prompt caching via --prompt-cache flag is not supported
-        # in this version of llama-server. Cache is handled via the API.
+        if model_def.flash_attn:
+            args.append("--flash-attn")
 
-        # Add extra custom arguments (can override defaults)
+        if use_cache:
+            args.extend(["--model-cache-dir", str(self.config.cache_dir)])
+
         if extra_args:
             args.extend(extra_args)
 
         return args
 
-    def _get_cache_path(self, model_def: ModelDefinition) -> Path | None:
-        """Get the cache file path for a model."""
-        if model_def.cache_dir:
-            cache_dir = Path(model_def.cache_dir).expanduser()
-        else:
-            cache_dir = self.config.cache_dir
+    def _start_background(self, args: list[str]) -> bool:
+        """Start server in background."""
+        import subprocess
+        import sys
 
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        return cache_dir / f"{model_def.id}.cache"
+        creationflags = 0
+        if sys.platform == "win32":
+            creationflags = subprocess.CREATE_NO_WINDOW
 
-    def _start_background(self, args: list[str], model_def: ModelDefinition) -> bool:
-        """Start server in background mode."""
-        self.config.log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = self.config.log_dir / f"llama-server-{model_def.id}.log"
+        process = subprocess.Popen(
+            args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
+        )
 
-        with open(log_file, "w") as f:
-            self._process = subprocess.Popen(
-                args,
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
+        self.pid_file.write_text(str(process.pid))
 
-        return self._process.poll() is None
-
-    def _start_foreground(self, args: list[str]) -> bool:
-        """Start server in foreground mode."""
-        try:
-            subprocess.run(args, check=True)
-            return True
-        except subprocess.CalledProcessError:
+        if not self.wait_for_ready():
+            console.print("[red]Server failed to start[/red]")
+            self.stop()
             return False
 
-    def wait_for_ready(self, timeout: int = 60) -> bool:
-        """Wait for the server to be ready to accept requests."""
-        start = time.time()
-        url = f"http://{self.config.host}:{self.config.port}/health"
+        return True
 
-        while time.time() - start < timeout:
+    def _start_foreground(self, args: list[str]) -> bool:
+        """Start server in foreground."""
+        import subprocess
+        import sys
+
+        creationflags = 0
+        if sys.platform == "win32":
+            creationflags = subprocess.CREATE_NO_WINDOW
+
+        self.pid_file.write_text(str(subprocess.Popen(
+            args,
+            creationflags=creationflags,
+        ).pid))
+
+        return True
+
+    def wait_for_ready(self, timeout: float = 60.0) -> bool:
+        """Wait for server to be ready."""
+        url = f"http://{self.config.host}:{self.config.port}/health"
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
             try:
                 response = httpx.get(url, timeout=2)
                 if response.status_code == 200:
@@ -213,3 +258,66 @@ class LlamaServerManager:
                 "healthy": False,
                 "error": str(e),
             }
+
+    async def generate(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+        stream: bool = False,
+    ) -> dict:
+        """Generate text using llama-server API.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content' keys
+            temperature: Sampling temperature (0.0 to 2.0)
+            max_tokens: Maximum tokens to generate
+            stream: Whether to stream the response
+
+        Returns:
+            API response dict with 'content' key
+
+        Raises:
+            RuntimeError: If server is not running
+            httpx.HTTPError: If API request fails
+        """
+        if not self.is_running():
+            raise RuntimeError("Server is not running")
+
+        url = f"http://{self.config.host}:{self.config.port}/v1/chat/completions"
+
+        payload = {
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": stream,
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload, timeout=300.0)
+            response.raise_for_status()
+            data = response.json()
+
+            if stream:
+                return data
+
+            # Extract content from response
+            if "choices" in data and len(data["choices"]) > 0:
+                choice = data["choices"][0]
+                if "message" in choice:
+                    return {"content": choice["message"]["content"]}
+                elif "text" in choice:
+                    return {"content": choice["text"]}
+
+            return {"content": ""}
+
+    def _register_shutdown_handler(self) -> None:
+        """Register cleanup handler for auto-shutdown on exit."""
+        import atexit
+
+        def cleanup():
+            if self.config.auto_shutdown_on_exit and self.is_running():
+                console.print("[yellow]Auto-shutting down server...[/yellow]")
+                self.stop(save_cache=True)
+
+        atexit.register(cleanup)

@@ -71,6 +71,16 @@ class PlatformInterface(ABC):
         """Kill processes by name."""
         pass
 
+    @abstractmethod
+    def get_textgrad_workflows_dir(self) -> Path:
+        """Get directory for textgrad workflows."""
+        pass
+
+    @abstractmethod
+    def get_textgrad_cache_dir(self) -> Path:
+        """Get directory for textgrad cache."""
+        pass
+
 
 class LinuxPlatform(PlatformInterface):
     """Linux platform implementation."""
@@ -186,6 +196,14 @@ WantedBy=default.target
             except FileNotFoundError:
                 pass
 
+    def get_textgrad_workflows_dir(self) -> Path:
+        """Get directory for textgrad workflows on Linux."""
+        return Path.home() / ".config" / "local-ai" / "textgrad" / "workflows"
+
+    def get_textgrad_cache_dir(self) -> Path:
+        """Get directory for textgrad cache on Linux."""
+        return Path.home() / ".cache" / "local-ai" / "textgrad"
+
 
 class MacPlatform(PlatformInterface):
     """macOS platform implementation."""
@@ -297,6 +315,16 @@ class MacPlatform(PlatformInterface):
                 subprocess.run(["pkill", "-f", name], capture_output=True)
             except FileNotFoundError:
                 pass
+
+    def get_textgrad_workflows_dir(self) -> Path:
+        """Get directory for textgrad workflows on macOS."""
+        return (
+            Path.home() / "Library" / "Application Support" / "local-ai" / "textgrad" / "workflows"
+        )
+
+    def get_textgrad_cache_dir(self) -> Path:
+        """Get directory for textgrad cache on macOS."""
+        return Path.home() / "Library" / "Caches" / "local-ai" / "textgrad"
 
 
 class WindowsPlatform(PlatformInterface):
@@ -427,6 +455,24 @@ class WindowsPlatform(PlatformInterface):
                 subprocess.run(["taskkill", "/F", "/IM", f"{name}.exe"], capture_output=True)
             except FileNotFoundError:
                 pass
+
+    def get_textgrad_workflows_dir(self) -> Path:
+        """Get directory for textgrad workflows on Windows."""
+        import os
+
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            return Path(appdata) / "local-ai" / "textgrad" / "workflows"
+        return Path.home() / "AppData" / "Roaming" / "local-ai" / "textgrad" / "workflows"
+
+    def get_textgrad_cache_dir(self) -> Path:
+        """Get directory for textgrad cache on Windows."""
+        import os
+
+        localappdata = os.environ.get("LOCALAPPDATA")
+        if localappdata:
+            return Path(localappdata) / "local-ai" / "textgrad"
+        return Path.home() / "AppData" / "Local" / "local-ai" / "textgrad"
 
 
 def get_platform() -> PlatformInterface:
