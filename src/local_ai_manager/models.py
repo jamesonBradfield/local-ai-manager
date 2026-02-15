@@ -196,6 +196,68 @@ class OpencodeConfig(BaseModel):
         return v
 
 
+class TextgradOptimizerType(str, Enum):
+    """Optimizer types for textgrad workflows."""
+
+    PROPOSITIONAL = "propositional"
+    TREE_OF_THOUGHTS = "tree_of_thoughts"
+    FEW_SHOT = "few_shot"
+    CRITIC = "critic"
+    MULTI_MODEL = "multi_model"
+
+
+class TextgradWorkflow(BaseModel):
+    """A textgrad optimization workflow configuration."""
+
+    schema_version: str = Field(default="1.0.0")
+    workflow_version: int = Field(default=1)
+
+    # Identification
+    id: str = Field(..., description="Unique workflow identifier")
+    name: str = Field(..., description="Human-readable name")
+    description: str = Field(default="", description="Optional description")
+
+    # Model configuration
+    forward_model_id: str = Field(..., description="Model ID for generation")
+    backward_model_id: str | None = Field(
+        default=None, description="Model ID for critique (None = use forward_model)"
+    )
+    optimizer_model_id: str | None = Field(
+        default=None, description="Model ID for prompt updates (None = use forward_model)"
+    )
+
+    # Optimizer settings
+    optimizer_type: TextgradOptimizerType = Field(default=TextgradOptimizerType.CRITIC)
+    max_iterations: int = Field(default=10, ge=1, le=50)
+    convergence_threshold: float = Field(default=0.9, ge=0.0, le=1.0)
+
+    # Workflow state
+    initial_prompt: str = Field(default="")
+    optimized_prompt: str | None = Field(default=None)
+    history: list[dict] = Field(default_factory=list)
+
+    created_at: str = Field(default_factory=lambda: str(Path().stat().st_mtime))
+    updated_at: str = Field(default_factory=lambda: str(Path().stat().st_mtime))
+
+    @field_validator("schema_version")
+    @classmethod
+    def validate_version(cls, v: str) -> str:
+        """Validate schema version."""
+        if not v.startswith("1."):
+            raise ValueError(f"Unsupported schema version: {v}")
+        return v
+
+
+class TextgradSettings(BaseModel):
+    """Global textgrad configuration."""
+
+    enabled: bool = Field(default=False)
+    default_forward_model: str | None = Field(default=None)
+    default_optimizer: TextgradOptimizerType = Field(default=TextgradOptimizerType.CRITIC)
+    auto_save_workflows: bool = Field(default=True)
+    max_iterations_default: int = Field(default=10, ge=1, le=100)
+
+
 class SystemConfig(BaseModel):
     """Root configuration for Local AI Manager."""
 
@@ -205,10 +267,15 @@ class SystemConfig(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     steam: SteamWatcherConfig = Field(default_factory=SteamWatcherConfig)
     opencode: OpencodeConfig = Field(default_factory=OpencodeConfig)
+    textgrad: TextgradSettings = Field(default_factory=TextgradSettings)
 
     # Model definitions
     models: list[ModelDefinition] = Field(default_factory=list)
 
+    # Saved workflows
+    workflows: list[TextgradWorkflow] = Field(default_factory=list)
+
     # Global settings
     verbose: bool = Field(default=False)
     dry_run: bool = Field(default=False)
+    auto_shutdown_on_exit: bool = Field(default=False)
