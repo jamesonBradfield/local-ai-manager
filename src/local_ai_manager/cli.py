@@ -17,7 +17,7 @@ from .registry import ModelRegistry
 from .server import LlamaServerManager
 from .steam_watcher import SteamWatcher
 from .textgrad import TextgradWorkflow, DiffEditor
-from .textgrad.persistence import load_workflow, save_workflow, list_workflows, get_workflow
+from .textgrad.persistence import load_workflows, save_workflow, list_workflows, get_workflow
 
 app = typer.Typer(help="Local AI Manager - Manage local LLMs with Steam integration")
 console = Console()
