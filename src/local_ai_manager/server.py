@@ -14,7 +14,8 @@ import httpx
 import psutil
 from rich.console import Console
 
-if TYPE_CHECKING:rom .config import ServerConfig
+if TYPE_CHECKING:
+    from .config import ServerConfig
 from .models import ModelDefinition
 
 
@@ -219,10 +220,14 @@ class LlamaServerManager:
         if sys.platform == "win32":
             creationflags = subprocess.CREATE_NO_WINDOW
 
-        self.pid_file.write_text(str(subprocess.Popen(
-            args,
-            creationflags=creationflags,
-        ).pid))
+        self.pid_file.write_text(
+            str(
+                subprocess.Popen(
+                    args,
+                    creationflags=creationflags,
+                ).pid
+            )
+        )
 
         return True
 
