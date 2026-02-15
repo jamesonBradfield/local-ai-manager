@@ -660,6 +660,9 @@ def textgrad_repair(
     context: str = typer.Option(
         "", "--context", help="Additional context about what you were trying to do"
     ),
+    template: str = typer.Option(
+        "", "--template", "-t", help="Custom prompt template file (overrides default repair prompt)"
+    ),
     forward_model: str = typer.Option("auto", "--forward-model", "-f", help="Model for generation"),
     backward_model: str | None = typer.Option(
         None, "--backward-model", "-b", help="Model for critique"
@@ -695,7 +698,16 @@ def textgrad_repair(
             backward_model=backward_model or forward_model_id,
         )
 
-        repair_prompt = f"""You are debugging a failed command execution.
+        # Load custom template if provided
+        if template:
+            with open(template, "r", encoding="utf-8") as f:
+                repair_prompt = f.read()
+            # Replace placeholders
+            repair_prompt = repair_prompt.replace("{{failed_command}}", failed_command)
+            repair_prompt = repair_prompt.replace("{{error_output}}", error_output)
+            repair_prompt = repair_prompt.replace("{{context}}", context)
+        else:
+            repair_prompt = f"""You are debugging a failed command execution.
 
 The command that failed:
 ```
