@@ -32,6 +32,7 @@ class LlamaServerManager:
             config: Server configuration
         """
         self.config = config
+        config.cache_dir.mkdir(parents=True, exist_ok=True)
         self.pid_file = config.cache_dir / "server.pid"
         self._register_shutdown_handler()
 
