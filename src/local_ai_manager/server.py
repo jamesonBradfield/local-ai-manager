@@ -14,11 +14,11 @@ from .models import ModelDefinition, ServerConfig
 
 class LlamaServerManager:
     """Manages llama-server process lifecycle with prompt caching."""
-    
+
     def __init__(self, config: ServerConfig) -> None:
         self.config = config
         self._process: subprocess.Popen | None = None
-    
+
     def is_running(self) -> bool:
         """Check if llama-server is currently running."""
         for proc in psutil.process_iter(["name"]):
@@ -28,12 +28,23 @@ class LlamaServerManager:
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
         return False
-    
-    def stop(self, save_cache: bool = False, cache_path: Path | None = None) -> bool:
-        """Stop the llama-server process gracefully."""
+
+    def stop(
+        self, save_cache: bool = False, cache_path: Path | None = None, timeout: float = 5.0
+    ) -> bool:
+        """Stop the llama-server process gracefully with timeout.
+
+        Args:
+            save_cache: Whether to save the prompt cache before stopping
+            cache_path: Custom path for the cache file
+            timeout: Seconds to wait for graceful shutdown before force kill
+
+        Returns:
+            True if all processes stopped, False if force kill was needed
+        """
         if not self.is_running():
             return True
-        
+
         # Find and terminate all llama-server processes
         terminated = []
         for proc in psutil.process_iter(["name", "pid"]):
@@ -43,19 +54,19 @@ class LlamaServerManager:
                     terminated.append(proc)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
-        
-        # Wait for graceful shutdown
-        gone, alive = psutil.wait_procs(terminated, timeout=5)
-        
+
+        # Wait for graceful shutdown with timeout
+        gone, alive = psutil.wait_procs(terminated, timeout=timeout)
+
         # Force kill any remaining
         for proc in alive:
             try:
                 proc.kill()
             except psutil.NoSuchProcess:
                 pass
-        
+
         return len(alive) == 0
-    
+
     def start(
         self,
         model_def: ModelDefinition,
@@ -68,13 +79,13 @@ class LlamaServerManager:
         if self.is_running():
             self.stop(save_cache=model_def.save_cache_on_exit)
             time.sleep(1)
-        
+
         args = self._build_args(model_def, model_path, use_cache, extra_args)
-        
+
         if background:
             return self._start_background(args, model_def)
         return self._start_foreground(args)
-    
+
     def _build_args(
         self,
         model_def: ModelDefinition,
@@ -85,21 +96,34 @@ class LlamaServerManager:
         """Build llama-server command-line arguments."""
         args = [
             str(self.config.llama_server_path),
-            "--model", str(model_path),
-            "--host", self.config.host,
-            "--port", str(self.config.port),
-            "--ctx-size", str(model_def.ctx_size),
-            "--n-gpu-layers", str(model_def.n_gpu_layers),
-            "--threads", str(model_def.threads),
-            "--batch-size", str(model_def.batch_size),
-            "--ubatch-size", str(model_def.ubatch_size),
-            "--parallel", "1",
-            "--temp", str(model_def.temperature),
-            "--top-p", str(model_def.top_p),
-            "--top-k", str(model_def.top_k),
-            "--alias", model_def.id,
+            "--model",
+            str(model_path),
+            "--host",
+            self.config.host,
+            "--port",
+            str(self.config.port),
+            "--ctx-size",
+            str(model_def.ctx_size),
+            "--n-gpu-layers",
+            str(model_def.n_gpu_layers),
+            "--threads",
+            str(model_def.threads),
+            "--batch-size",
+            str(model_def.batch_size),
+            "--ubatch-size",
+            str(model_def.ubatch_size),
+            "--parallel",
+            "1",
+            "--temp",
+            str(model_def.temperature),
+            "--top-p",
+            str(model_def.top_p),
+            "--top-k",
+            str(model_def.top_k),
+            "--alias",
+            model_def.id,
         ]
-        
+
         # Memory & performance flags
         if model_def.flash_attn:
             args.extend(["--flash-attn", "on"])
@@ -109,7 +133,7 @@ class LlamaServerManager:
             args.append("--no-mmap")
         if model_def.cont_batching:
             args.append("--cont-batching")
-       
+
         if model_def.cache_type_k:
             args.extend(["--cache-type-k", model_def.cache_type_k])
         if model_def.cache_type_v:
@@ -117,28 +141,28 @@ class LlamaServerManager:
 
         # Note: Prompt caching via --prompt-cache flag is not supported
         # in this version of llama-server. Cache is handled via the API.
-        
+
         # Add extra custom arguments (can override defaults)
         if extra_args:
             args.extend(extra_args)
-        
+
         return args
-    
+
     def _get_cache_path(self, model_def: ModelDefinition) -> Path | None:
         """Get the cache file path for a model."""
         if model_def.cache_dir:
             cache_dir = Path(model_def.cache_dir).expanduser()
         else:
             cache_dir = self.config.cache_dir
-        
+
         cache_dir.mkdir(parents=True, exist_ok=True)
         return cache_dir / f"{model_def.id}.cache"
-    
+
     def _start_background(self, args: list[str], model_def: ModelDefinition) -> bool:
         """Start server in background mode."""
         self.config.log_dir.mkdir(parents=True, exist_ok=True)
         log_file = self.config.log_dir / f"llama-server-{model_def.id}.log"
-        
+
         with open(log_file, "w") as f:
             self._process = subprocess.Popen(
                 args,
@@ -146,9 +170,9 @@ class LlamaServerManager:
                 stderr=subprocess.STDOUT,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
-        
+
         return self._process.poll() is None
-    
+
     def _start_foreground(self, args: list[str]) -> bool:
         """Start server in foreground mode."""
         try:
@@ -156,12 +180,12 @@ class LlamaServerManager:
             return True
         except subprocess.CalledProcessError:
             return False
-    
+
     def wait_for_ready(self, timeout: int = 60) -> bool:
         """Wait for the server to be ready to accept requests."""
         start = time.time()
         url = f"http://{self.config.host}:{self.config.port}/health"
-        
+
         while time.time() - start < timeout:
             try:
                 response = httpx.get(url, timeout=2)
@@ -170,9 +194,9 @@ class LlamaServerManager:
             except httpx.RequestError:
                 pass
             time.sleep(0.5)
-        
+
         return False
-    
+
     def get_status(self) -> dict:
         """Get current server status."""
         url = f"http://{self.config.host}:{self.config.port}/health"

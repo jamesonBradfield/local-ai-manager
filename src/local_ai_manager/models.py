@@ -14,7 +14,7 @@ from .system_platform import platform_instance
 
 class QuantizationType(str, Enum):
     """GGUF quantization types."""
-    
+
     Q4_0 = "Q4_0"
     Q4_1 = "Q4_1"
     Q4_K_M = "Q4_K_M"
@@ -31,7 +31,7 @@ class QuantizationType(str, Enum):
 
 class ComputeBackend(str, Enum):
     """Compute backends for llama.cpp."""
-    
+
     CPU = "cpu"
     CUDA = "cuda"
     VULKAN = "vulkan"
@@ -41,52 +41,58 @@ class ComputeBackend(str, Enum):
 
 class ModelDefinition(BaseModel):
     """Definition of a GGUF model with configuration."""
-    
+
     # Identification
     id: str = Field(..., description="Unique identifier for the model")
     name: str = Field(..., description="Human-readable name")
     description: str = Field(default="", description="Optional description")
-    
+
     # File matching
     filename: str | None = Field(default=None, description="Exact filename to match")
-    filename_pattern: str | None = Field(default=None, description="Regex pattern to match filename")
-    
+    filename_pattern: str | None = Field(
+        default=None, description="Regex pattern to match filename"
+    )
+
     # llama-server configuration
     ctx_size: int = Field(default=8192, description="Context size in tokens")
     n_gpu_layers: int = Field(default=99, description="Number of layers to offload to GPU")
     threads: int = Field(default=8, description="Number of CPU threads")
     batch_size: int = Field(default=4096, description="Batch size for prompt processing")
     ubatch_size: int = Field(default=1024, description="Micro-batch size")
-    
+
     # Memory & performance
     flash_attn: bool = Field(default=True, description="Enable flash attention")
     mlock: bool = Field(default=True, description="Lock model in memory")
     mmap: bool = Field(default=True, description="Use memory mapping")
     cont_batching: bool = Field(default=True, description="Enable continuous batching")
-    cache_type_k: str | None = Field(default=None, description="KV cache type for K (f16, q8_0, q4_0)")
-    cache_type_v: str | None = Field(default=None, description="KV cache type for V (f16, q8_0, q4_0)")   
+    cache_type_k: str | None = Field(
+        default=None, description="KV cache type for K (f16, q8_0, q4_0)"
+    )
+    cache_type_v: str | None = Field(
+        default=None, description="KV cache type for V (f16, q8_0, q4_0)"
+    )
     # Sampling parameters
     temperature: float = Field(default=0.6, ge=0.0, le=2.0)
     top_p: float = Field(default=0.95, ge=0.0, le=1.0)
     top_k: int = Field(default=40, ge=0)
-    
+
     # Prompt caching
     cache_dir: str | None = Field(default=None, description="Directory for prompt cache")
     save_cache_on_exit: bool = Field(default=True, description="Save cache when stopping")
-    
+
     # Priority for auto-selection (lower = higher priority)
     priority: int = Field(default=5, ge=1, le=10)
-    
+
     # Tags for filtering/grouping
     tags: list[str] = Field(default_factory=list)
-    
+
     @model_validator(mode="after")
     def validate_filename_or_pattern(self) -> "ModelDefinition":
         """Ensure either filename or filename_pattern is set."""
         if self.filename is None and self.filename_pattern is None:
             raise ValueError("Either 'filename' or 'filename_pattern' must be set")
         return self
-    
+
     def matches_file(self, filepath: Path) -> bool:
         """Check if this definition matches a given file path."""
         if self.filename is not None:
@@ -94,12 +100,12 @@ class ModelDefinition(BaseModel):
         if self.filename_pattern is not None:
             return bool(re.search(self.filename_pattern, filepath.name, re.IGNORECASE))
         return False
-    
+
     def estimate_vram_gb(self) -> float:
         """Estimate VRAM usage in GB."""
         # Rough estimation based on context size
         # Model weights + KV cache
-        kv_cache_gb = (self.ctx_size * 2 * 128 * 32) / (1024 ** 3)  # Rough estimate
+        kv_cache_gb = (self.ctx_size * 2 * 128 * 32) / (1024**3)  # Rough estimate
         return kv_cache_gb + 2.0  # Base model estimate
 
 
@@ -110,7 +116,9 @@ class ServerConfig(BaseModel):
     port: int = Field(default=8080, ge=1024, le=65535)
 
     # Paths - use platform-specific defaults
-    llama_server_path: Path = Field(default_factory=lambda: platform_instance().get_llama_server_path())
+    llama_server_path: Path = Field(
+        default_factory=lambda: platform_instance().get_llama_server_path()
+    )
     models_dir: Path = Field(default_factory=lambda: platform_instance().get_default_models_dir())
     cache_dir: Path = Field(default_factory=lambda: platform_instance().get_default_cache_dir())
     log_dir: Path = Field(default_factory=lambda: platform_instance().get_default_log_dir())
@@ -134,7 +142,9 @@ class SteamWatcherConfig(BaseModel):
     enabled: bool = Field(default=True)
 
     # Steam paths - use platform-specific detection
-    steam_logs_dir: Path = Field(default_factory=lambda: platform_instance().get_steam_logs_path() or Path.home() / ".steam")
+    steam_logs_dir: Path = Field(
+        default_factory=lambda: platform_instance().get_steam_logs_path() or Path.home() / ".steam"
+    )
     log_file: str = Field(default="gameprocess_log.txt")
 
     # Behavior
@@ -144,9 +154,17 @@ class SteamWatcherConfig(BaseModel):
     restore_model: str | None = Field(default=None, description="Model to restore after gaming")
 
     # Process cleanup - platform-specific process names
-    processes_to_kill: list[str] = Field(default_factory=lambda: [
-        "chrome", "firefox", "safari", "msedge", "discord", "slack", "teams"
-    ])
+    processes_to_kill: list[str] = Field(
+        default_factory=lambda: [
+            "chrome",
+            "firefox",
+            "safari",
+            "msedge",
+            "discord",
+            "slack",
+            "teams",
+        ]
+    )
 
     @field_validator("steam_logs_dir", mode="before")
     @classmethod
@@ -160,7 +178,9 @@ class SteamWatcherConfig(BaseModel):
 class OpencodeConfig(BaseModel):
     """Configuration for Oh-My-Opencode integration."""
 
-    config_dir: Path = Field(default_factory=lambda: platform_instance().get_default_config_dir().parent / "opencode")
+    config_dir: Path = Field(
+        default_factory=lambda: platform_instance().get_default_config_dir().parent / "opencode"
+    )
 
     # Agent switching
     local_agent_name: str = Field(default="local")
@@ -178,17 +198,17 @@ class OpencodeConfig(BaseModel):
 
 class SystemConfig(BaseModel):
     """Root configuration for Local AI Manager."""
-    
+
     version: str = Field(default="2.0.0")
-    
+
     # Sub-configs
     server: ServerConfig = Field(default_factory=ServerConfig)
     steam: SteamWatcherConfig = Field(default_factory=SteamWatcherConfig)
     opencode: OpencodeConfig = Field(default_factory=OpencodeConfig)
-    
+
     # Model definitions
     models: list[ModelDefinition] = Field(default_factory=list)
-    
+
     # Global settings
     verbose: bool = Field(default=False)
     dry_run: bool = Field(default=False)

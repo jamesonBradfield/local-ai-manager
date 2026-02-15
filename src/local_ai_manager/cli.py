@@ -21,6 +21,61 @@ app = typer.Typer(help="Local AI Manager - Manage local LLMs with Steam integrat
 console = Console()
 
 
+# Security validation for extra_args
+DANGEROUS_ARGS = {
+    "--rm",
+    "--delete",
+    "--exec",
+    "--eval",
+    "--shell",
+    "|",
+    ">",
+    "<",
+    "&&",
+    "||",
+    ";",
+    "`",
+    "$",
+}
+
+
+def validate_extra_args(extra_args: str | None) -> list[str]:
+    """Validate extra_args for security issues.
+
+    Args:
+        extra_args: Raw extra arguments string
+
+    Returns:
+        List of parsed arguments
+
+    Raises:
+        typer.Exit: If dangerous arguments detected
+    """
+    if not extra_args:
+        return []
+
+    try:
+        parsed = shlex.split(extra_args)
+    except ValueError as e:
+        console.print(f"[red]Error parsing extra arguments: {e}[/red]")
+        raise typer.Exit(1)
+
+    # Check for dangerous arguments
+    for arg in parsed:
+        arg_lower = arg.lower()
+        if any(dangerous in arg_lower for dangerous in DANGEROUS_ARGS):
+            console.print(
+                f"[red]Security Error: Potentially dangerous argument detected: '{arg}'[/red]"
+            )
+            console.print(
+                "[yellow]For security, the following are not allowed in extra_args:[/yellow]"
+            )
+            console.print(f"  {', '.join(sorted(DANGEROUS_ARGS))}")
+            raise typer.Exit(1)
+
+    return parsed
+
+
 @app.command()
 def list_models(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed info"),
@@ -28,17 +83,17 @@ def list_models(
     """List all available models and their status."""
     config = load_config()
     registry = ModelRegistry(config)
-    
+
     table = Table(title="Available Models")
     table.add_column("ID", style="cyan")
     table.add_column("Name", style="green")
     table.add_column("Status", style="yellow")
     table.add_column("Priority", style="blue")
-    
+
     if verbose:
         table.add_column("Context", style="magenta")
         table.add_column("Path", style="dim")
-    
+
     for model_id, model_def, path in registry.get_available_models():
         status = "[green]Available[/green]" if path.exists() else "[red]Missing[/red]"
         row = [
@@ -48,14 +103,16 @@ def list_models(
             str(model_def.priority),
         ]
         if verbose:
-            row.extend([
-                f"{model_def.ctx_size:,}",
-                str(path),
-            ])
+            row.extend(
+                [
+                    f"{model_def.ctx_size:,}",
+                    str(path),
+                ]
+            )
         table.add_row(*row)
-    
+
     console.print(table)
-    
+
     # Show auto-selected model
     auto = registry.get_auto_selected_model()
     if auto:
@@ -68,14 +125,18 @@ def start(
     background: bool = typer.Option(False, "--background", "-b", help="Run in background"),
     context: int = typer.Option(0, "--context", "-c", help="Override context size"),
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable prompt caching"),
-    autostart: bool = typer.Option(False, "--autostart", "-a", help="Enable auto-start on Windows login"),
-    extra_args: str = typer.Option("", "--extra-args", "-e", help="Extra arguments for llama-server (quoted string)"),
+    autostart: bool = typer.Option(
+        False, "--autostart", "-a", help="Enable auto-start on Windows login"
+    ),
+    extra_args: str = typer.Option(
+        "", "--extra-args", "-e", help="Extra arguments for llama-server (quoted string)"
+    ),
 ) -> None:
     """Start the llama-server with the specified model."""
     config = load_config()
     registry = ModelRegistry(config)
     server = LlamaServerManager(config.server)
-    
+
     # Determine which model to use
     if model == "auto":
         selection = registry.get_auto_selected_model()
@@ -94,32 +155,48 @@ def start(
             raise typer.Exit(1)
         model_def, model_path = result
         model_id = model
-    
+
     # Override context size if specified
     if context > 0:
+        # Validate context doesn't exceed model maximum
+        max_ctx = model_def.ctx_size
+        if context > max_ctx:
+            console.print(
+                f"[red]Error: Requested context size ({context}) exceeds model maximum ({max_ctx})[/red]"
+            )
+            console.print(f"[yellow]Tip: Use --context {max_ctx} or less for this model[/yellow]")
+            raise typer.Exit(1)
         model_def.ctx_size = context
-    
-    # Parse extra arguments
-    parsed_extra_args = shlex.split(extra_args) if extra_args else None
+
+    # Parse and validate extra arguments
+    parsed_extra_args = validate_extra_args(extra_args) if extra_args else None
     if parsed_extra_args:
         console.print(f"[dim]Extra args: {' '.join(parsed_extra_args)}[/dim]")
-    
+
     # Display startup info
-    console.print(Panel(
-        f"[bold cyan]{model_def.name}[/bold cyan]\n"
-        f"Context: {model_def.ctx_size:,} tokens\n"
-        f"GPU Layers: {model_def.n_gpu_layers}\n"
-        f"Flash Attention: {'Yes' if model_def.flash_attn else 'No'}\n"
-        f"Prompt Cache: {'No' if no_cache else 'Yes'}",
-        title="Starting Server",
-    ))
-    
+    console.print(
+        Panel(
+            f"[bold cyan]{model_def.name}[/bold cyan]\n"
+            f"Context: {model_def.ctx_size:,} tokens\n"
+            f"GPU Layers: {model_def.n_gpu_layers}\n"
+            f"Flash Attention: {'Yes' if model_def.flash_attn else 'No'}\n"
+            f"Prompt Cache: {'No' if no_cache else 'Yes'}",
+            title="Starting Server",
+        )
+    )
+
     # Start the server
-    if server.start(model_def, model_path, background=background, use_cache=not no_cache, extra_args=parsed_extra_args):
+    if server.start(
+        model_def,
+        model_path,
+        background=background,
+        use_cache=not no_cache,
+        extra_args=parsed_extra_args,
+    ):
         if background:
             console.print("[green]Server started in background[/green]")
             console.print(f"  Logs: {config.server.log_dir}/llama-server-{model_id}.log")
-            
+
             if server.wait_for_ready(timeout=60):
                 console.print("[green]Server is ready![/green]")
             else:
@@ -130,7 +207,7 @@ def start(
     else:
         console.print("[red]Failed to start server[/red]")
         raise typer.Exit(1)
-    
+
     # Enable autostart if requested
     if autostart:
         console.print("\n[yellow]Enabling auto-start on login...[/yellow]")
@@ -149,11 +226,11 @@ def stop(
     """Stop the running llama-server."""
     config = load_config()
     server = LlamaServerManager(config.server)
-    
+
     if not server.is_running():
         console.print("[yellow]Server is not running[/yellow]")
         return
-    
+
     console.print("Stopping server...")
     if server.stop(save_cache=save_cache):
         console.print("[green]Server stopped[/green]")
@@ -166,9 +243,9 @@ def status() -> None:
     """Check the status of the llama-server and autostart."""
     config = load_config()
     server = LlamaServerManager(config.server)
-    
+
     status_info = server.get_status()
-    
+
     if status_info["running"]:
         if status_info["healthy"]:
             console.print("[green]Server is running and healthy[/green]")
@@ -182,7 +259,7 @@ def status() -> None:
                 console.print(f"  Error: {status_info['error']}")
     else:
         console.print("[red]Server is not running[/red]")
-    
+
     # Show autostart status
     if is_autostart_enabled():
         console.print("\n[green]Auto-start is enabled[/green]")
@@ -196,15 +273,15 @@ def config_init(
 ) -> None:
     """Initialize default configuration file."""
     config_path = Path.home() / ".config" / "local-ai" / "local-ai-config.json"
-    
+
     if config_path.exists() and not force:
         console.print(f"[yellow]Config already exists at {config_path}[/yellow]")
         console.print("Use --force to overwrite")
         return
-    
+
     config = create_default_config()
     save_config(config, config_path)
-    
+
     console.print(f"[green]Configuration created at {config_path}[/green]")
     console.print("\nEdit this file to customize:")
     console.print("  - Model definitions")
@@ -216,25 +293,27 @@ def config_init(
 def config_show() -> None:
     """Display current configuration."""
     config = load_config()
-    
-    console.print(Panel(
-        f"[bold]Models Directory:[/bold] {config.server.models_dir}\n"
-        f"[bold]Cache Directory:[/bold] {config.server.cache_dir}\n"
-        f"[bold]Log Directory:[/bold] {config.server.log_dir}\n"
-        f"[bold]Default Model:[/bold] {config.server.default_model or 'Auto'}\n"
-        f"[bold]Steam Watcher:[/bold] {'Enabled' if config.steam.enabled else 'Disabled'}",
-        title="Configuration",
-    ))
-    
+
+    console.print(
+        Panel(
+            f"[bold]Models Directory:[/bold] {config.server.models_dir}\n"
+            f"[bold]Cache Directory:[/bold] {config.server.cache_dir}\n"
+            f"[bold]Log Directory:[/bold] {config.server.log_dir}\n"
+            f"[bold]Default Model:[/bold] {config.server.default_model or 'Auto'}\n"
+            f"[bold]Steam Watcher:[/bold] {'Enabled' if config.steam.enabled else 'Disabled'}",
+            title="Configuration",
+        )
+    )
+
     table = Table(title="Model Definitions")
     table.add_column("ID", style="cyan")
     table.add_column("Name", style="green")
     table.add_column("Pattern", style="dim")
-    
+
     for model in config.models:
         pattern = model.filename or model.filename_pattern or "N/A"
         table.add_row(model.id, model.name, pattern[:40] + "..." if len(pattern) > 40 else pattern)
-    
+
     console.print(table)
 
 
@@ -254,21 +333,7 @@ def steam_start() -> None:
 @steam_app.command("status")
 def steam_status() -> None:
     """Check if the Steam watcher is running."""
-    import psutil
-    
-    running = False
-    for proc in psutil.process_iter(["name", "cmdline"]):
-        try:
-            cmdline_list = proc.info.get("cmdline")
-            if cmdline_list:
-                cmdline = " ".join(cmdline_list)
-                if "steam" in cmdline and "watcher" in cmdline.lower():
-                    running = True
-                    break
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
-    
-    if running:
+    if SteamWatcher.is_running():
         console.print("[green]Steam watcher is running[/green]")
     else:
         console.print("[yellow]Steam watcher is not running[/yellow]")
@@ -278,18 +343,8 @@ def steam_status() -> None:
 @steam_app.command("stop")
 def steam_stop() -> None:
     """Stop the Steam watcher daemon."""
-    import psutil
-    
-    stopped = 0
-    for proc in psutil.process_iter(["name", "cmdline"]):
-        try:
-            cmdline_list = proc.info.get("cmdline")
-            if cmdline_list and any("steam" in str(arg).lower() and "watcher" in str(arg).lower() for arg in cmdline_list):
-                proc.terminate()
-                stopped += 1
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
-    
+    stopped = SteamWatcher.stop_all()
+
     if stopped > 0:
         console.print(f"[green]Stopped {stopped} watcher process(es)[/green]")
     else:
@@ -308,7 +363,7 @@ def autostart_enable(
 ) -> None:
     """Enable auto-start on Windows login."""
     console.print(f"[yellow]Enabling auto-start with model '{model}'...[/yellow]")
-    
+
     if enable_autostart(model=model, background=background):
         console.print("[green]Auto-start enabled![/green]")
         console.print(f"  Model: {model}")
@@ -325,7 +380,7 @@ def autostart_enable(
 def autostart_disable() -> None:
     """Disable auto-start on Windows login."""
     console.print("[yellow]Disabling auto-start...[/yellow]")
-    
+
     if disable_autostart():
         console.print("[green]Auto-start disabled![/green]")
     else:
