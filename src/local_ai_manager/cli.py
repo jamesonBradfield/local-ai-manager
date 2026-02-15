@@ -740,6 +740,149 @@ Respond with a JSON object containing:
     asyncio.run(run_repair())
 
 
+@app.command()
+def repair_skill(
+    failed_command: str = typer.Option(..., "--command", "-c", help="The command that failed"),
+    error_output: str = typer.Option("", "--error", "-e", help="Error output"),
+    context: str = typer.Option("", "--context", help="What you were trying to do"),
+    name: str = typer.Option("", "--name", "-n", help="Skill name (auto-generated if empty)"),
+    forward_model: str = typer.Option("auto", "--forward-model", "-f", help="Model for generation"),
+) -> None:
+    """Use textgrad to repair a failed command and save as a reusable skill."""
+    import asyncio
+    import json
+    from pathlib import Path
+    from .config import load_config
+    from .registry import ModelRegistry
+    from .textgrad.function import LLMFunction
+    from .textgrad.variable import TextVariable, TextRole
+
+    console = Console()
+    config = load_config()
+    registry = ModelRegistry(config)
+
+    skills_dir = Path(__file__).parent.parent / "skills"
+    skills_dir.mkdir(exist_ok=True)
+    skills_file = skills_dir / "skills.json"
+
+    async def run_repair():
+        if forward_model == "auto":
+            selection = registry.get_auto_selected_model()
+            if not selection:
+                console.print("[red]No models available![/red]")
+                raise typer.Exit(1)
+            forward_model_id = selection[0]
+        else:
+            forward_model_id = forward_model
+
+        console.print(f"[cyan]Using model: {forward_model_id}[/cyan]")
+
+        llm = LLMFunction(forward_model=forward_model_id, backward_model=forward_model_id)
+
+        repair_prompt = f"""You are debugging a failed command. Fix it and create a reusable skill.
+
+Failed command: {failed_command}
+Error: {error_output}
+Context: {context}
+
+Create a skill that:
+1. Has a clear name and description
+2. Contains the FIXED command (not the broken one)
+3. Explains when to use this skill
+
+Return JSON:
+{{
+  "name": "skill-name",
+  "description": "what this skill does",
+  "command": "the corrected command",
+  "explanation": "why the original failed and how this fixes it"
+}}"""
+
+        user_input = TextVariable(value="", role=TextRole.USER, requires_grad=False)
+        result = await llm.forward([user_input], system_prompt=repair_prompt)
+
+        # Parse the JSON response
+        try:
+            import re
+
+            json_match = re.search(r"\{[\s\S]*\}", result)
+            if json_match:
+                skill = json.loads(json_match.group())
+            else:
+                console.print("[red]Could not parse skill JSON[/red]")
+                console.print(result)
+                return
+        except json.JSONDecodeError:
+            console.print("[red]Failed to parse JSON response[/red]")
+            console.print(result)
+            return
+
+        # Use provided name or auto-generated
+        if name:
+            skill["name"] = name
+        elif "name" not in skill:
+            skill["name"] = failed_command.split()[0] if failed_command else "unnamed"
+
+        # Load existing skills
+        if skills_file.exists():
+            with open(skills_file, "r") as f:
+                skills_data = json.load(f)
+        else:
+            skills_data = {"version": "1.0", "description": "Fallback skills", "skills": []}
+
+        # Add or update skill
+        skills_data["skills"] = [s for s in skills_data["skills"] if s.get("name") != skill["name"]]
+        skills_data["skills"].append(skill)
+
+        with open(skills_file, "w") as f:
+            json.dump(skills_data, f, indent=2)
+
+        console.print(f"[green]Saved skill: {skill['name']}[/green]")
+        console.print(Panel(skill["command"], title="Fixed Command"))
+        console.print(f"[dim]Explanation: {skill.get('explanation', 'N/A')}[/dim]")
+
+    asyncio.run(run_repair())
+
+
+@app.command()
+def list_skills() -> None:
+    """List all available fallback skills."""
+    import json
+    from pathlib import Path
+
+    console = Console()
+    skills_file = Path(__file__).parent.parent / "skills" / "skills.json"
+
+    if not skills_file.exists():
+        console.print("[yellow]No skills found[/yellow]")
+        return
+
+    with open(skills_file, "r") as f:
+        skills_data = json.load(f)
+
+    if not skills_data.get("skills"):
+        console.print("[yellow]No skills defined[/yellow]")
+        return
+
+    from rich.table import Table
+
+    table = Table(title="Fallback Skills")
+    table.add_column("Name")
+    table.add_column("Description")
+    table.add_column("Command")
+
+    for skill in skills_data["skills"]:
+        table.add_row(
+            skill.get("name", "N/A"),
+            skill.get("description", ""),
+            skill.get("command", "")[:50] + "..."
+            if len(skill.get("command", "")) > 50
+            else skill.get("command", ""),
+        )
+
+    console.print(table)
+
+
 def server_cli() -> None:
     """Server management CLI (legacy entry point)."""
     app()
