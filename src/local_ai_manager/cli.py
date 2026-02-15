@@ -16,6 +16,8 @@ from .config import create_default_config, load_config, save_config
 from .registry import ModelRegistry
 from .server import LlamaServerManager
 from .steam_watcher import SteamWatcher
+from .textgrad import TextgradWorkflow, DiffEditor
+from .textgrad.persistence import load_workflow, save_workflow, list_workflows, get_workflow
 
 app = typer.Typer(help="Local AI Manager - Manage local LLMs with Steam integration")
 console = Console()
@@ -396,6 +398,171 @@ def autostart_status() -> None:
     else:
         console.print("[yellow]Auto-start is disabled[/yellow]")
         console.print("\nEnable with: local-ai autostart enable")
+
+
+# Textgrad subcommands
+textgrad_app = typer.Typer(help="Textgrad prompt optimization")
+app.add_typer(textgrad_app, name="textgrad")
+
+
+@textgrad_app.command("init")
+def textgrad_init(
+    name: str = typer.Argument(..., help="Workflow name"),
+    prompt: str = typer.Option(..., "--prompt", "-p", help="Initial system prompt"),
+    forward_model: str = typer.Option(
+        "auto",
+        "--forward-model",
+        "-f",
+        help="Model for generation (default: auto-select)",
+    ),
+    backward_model: str | None = typer.Option(
+        None,
+        "--backward-model",
+        "-b",
+        help="Model for critique (default: same as forward)",
+    ),
+    optimizer_model: str | None = typer.Option(
+        None,
+        "--optimizer-model",
+        "-o",
+        help="Model for optimization (default: same as forward)",
+    ),
+    max_iterations: int = typer.Option(
+        10,
+        "--max-iterations",
+        "-i",
+        help="Maximum optimization iterations",
+    ),
+) -> None:
+    """Initialize a new textgrad workflow."""
+    config = load_config()
+    workflow_id = name.lower().replace(" ", "-")
+
+    # Resolve models
+    registry = ModelRegistry(config)
+    if forward_model == "auto":
+        selected = registry.get_auto_selected_model()
+        if selected:
+            _, model_def, _ = selected
+            forward_model = model_def.id
+        else:
+            forward_model = "nanbeige-3b"
+
+    from .models import TextgradWorkflow
+
+    workflow = TextgradWorkflow(
+        id=workflow_id,
+        name=name,
+        forward_model_id=forward_model,
+        backward_model_id=backward_model,
+        optimizer_model_id=optimizer_model,
+        max_iterations=max_iterations,
+        initial_prompt=prompt,
+    )
+
+    if save_workflow(workflow, config):
+        console.print(f"[green]Created workflow '{name}' ({workflow_id})[/green]")
+        console.print(f"  Forward model: {forward_model}")
+        if backward_model:
+            console.print(f"  Backward model: {backward_model}")
+        if optimizer_model:
+            console.print(f"  Optimizer model: {optimizer_model}")
+    else:
+        console.print("[red]Failed to save workflow[/red]")
+
+
+@textgrad_app.command("list")
+def textgrad_list() -> None:
+    """List all saved workflows."""
+    config = load_config()
+    workflows = list_workflows(config)
+
+    if not workflows:
+        console.print("[yellow]No workflows found[/yellow]")
+        return
+
+    table = Table(title="Textgrad Workflows")
+    table.add_column("ID", style="cyan")
+    table.add_column("Name", style="green")
+    table.add_column("Forward Model", style="blue")
+    table.add_column("Iterations", justify="right")
+    table.add_column("Status", style="yellow")
+
+    for workflow in workflows:
+        status = "Optimized" if workflow.optimized_prompt else "Pending"
+        table.add_row(
+            workflow.id,
+            workflow.name,
+            workflow.forward_model_id,
+            str(len(workflow.history)),
+            status,
+        )
+
+    console.print(table)
+
+
+@textgrad_app.command("train")
+def textgrad_train(
+    workflow_id: str = typer.Argument(..., help="Workflow ID"),
+    user_prompt: str = typer.Option(
+        ...,
+        "--prompt",
+        "-p",
+        help="User input/context to optimize against",
+    ),
+) -> None:
+    """Run optimization on a workflow."""
+    import asyncio
+
+    config = load_config()
+    workflow = get_workflow(workflow_id, config)
+
+    if not workflow:
+        console.print(f"[red]Workflow '{workflow_id}' not found[/red]")
+        console.print("\nAvailable workflows:")
+        textgrad_list()
+        return
+
+    async def run_training():
+        result = await workflow.optimize(user_prompt, config)
+
+        # Save updated workflow
+        save_workflow(workflow, config)
+
+        # Display results
+        if result.converged:
+            console.print("\n[green]✓ Optimization converged![/green]")
+        else:
+            console.print("\n[yellow]⚠ Maximum iterations reached without convergence[/yellow]")
+
+        console.print(f"\nIterations: {result.iterations}")
+        console.print(f"Final prompt saved to workflow '{workflow_id}'")
+
+        if result.final_prompt:
+            console.print(Panel(result.final_prompt, title="Optimized Prompt"))
+
+    asyncio.run(run_training())
+
+
+@textgrad_app.command("show")
+def textgrad_show(
+    workflow_id: str = typer.Argument(..., help="Workflow ID"),
+) -> None:
+    """Display workflow details."""
+    config = load_config()
+    workflow = get_workflow(workflow_id, config)
+
+    if not workflow:
+        console.print(f"[red]Workflow '{workflow_id}' not found[/red]")
+        return
+
+    console.print(Panel(workflow.initial_prompt, title="Initial Prompt"))
+
+    if workflow.optimized_prompt:
+        console.print(Panel(workflow.optimized_prompt, title="Optimized Prompt"))
+
+    if workflow.history:
+        console.print(f"\n[yellow]History:[/yellow] {len(workflow.history)} iterations")
 
 
 def main() -> None:
