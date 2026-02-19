@@ -80,6 +80,17 @@ class ModelDefinition(BaseModel):
     cache_dir: str | None = Field(default=None, description="Directory for prompt cache")
     save_cache_on_exit: bool = Field(default=True, description="Save cache when stopping")
 
+    # Speculative decoding
+    draft_model_id: str | None = Field(
+        default=None, description="ID of draft model for speculative decoding"
+    )
+    draft_n_tokens: int = Field(
+        default=16, ge=1, le=64, description="Number of tokens to draft per iteration"
+    )
+    draft_p_min: float = Field(
+        default=0.9, ge=0.0, le=1.0, description="Minimum draft token probability threshold"
+    )
+
     # Priority for auto-selection (lower = higher priority)
     priority: int = Field(default=5, ge=1, le=10)
 
@@ -127,6 +138,18 @@ class ServerConfig(BaseModel):
     auto_start: bool = Field(default=False, description="Auto-start server on boot")
     auto_shutdown_on_exit: bool = Field(default=False, description="Auto-shutdown server on exit")
     default_model: str | None = Field(default=None, description="Default model to use")
+
+    # Server startup
+    start_timeout: float = Field(
+        default=120.0,
+        ge=10.0,
+        le=600.0,
+        description="Timeout in seconds for server to become ready",
+    )
+    create_no_window: bool = Field(
+        default=False,
+        description="Use CREATE_NO_WINDOW flag on Windows (may block GPU processes)",
+    )
 
     @field_validator("models_dir", "cache_dir", "log_dir", "llama_server_path", mode="before")
     @classmethod

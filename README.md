@@ -20,6 +20,8 @@ This is tooling I built for myself that:
 - Manages llama-server lifecycle
 - Pauses AI when I launch Steam games (saves VRAM)
 - Has a config file instead of a million PowerShell scripts
+- Supports speculative decoding for faster inference
+- Includes TextGrad for automatic prompt optimization
 
 I use it daily on Windows with Git Bash. It probably has bugs I haven't hit yet.
 
@@ -146,6 +148,146 @@ Config lives at `~/.config/local-ai/local-ai-config.json`:
     }
   ]
 }
+```
+
+## Speculative Decoding
+
+Use a smaller draft model to accelerate generation with a larger model. This can provide 2-3x speedup on supported hardware.
+
+### Setup
+
+```json
+{
+  "models": [
+    {
+      "id": "qwen-0.5b",
+      "name": "Qwen2.5 0.5B (Draft)",
+      "filename_pattern": "(?i)Qwen.*0\\.5B.*\\.gguf$",
+      "ctx_size": 32768,
+      "priority": 5
+    },
+    {
+      "id": "qwen-7b",
+      "name": "Qwen2.5 7B (Main)",
+      "filename_pattern": "(?i)Qwen.*7B.*Q4_K_M.*\\.gguf$",
+      "ctx_size": 32768,
+      "draft_model_id": "qwen-0.5b",
+      "draft_ngram_min": 3,
+      "priority": 1
+    }
+  ]
+}
+```
+
+### Configuration Options
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `draft_model_id` | string | `null` | ID of the draft model to use for speculative decoding |
+| `draft_ngram_min` | integer | `3` | Minimum n-gram size for draft model matching |
+
+The draft model should be significantly smaller than the main model (e.g., 0.5B for a 7B model) and from the same model family for best results.
+
+## TextGrad (Prompt Optimization)
+
+TextGrad is a text-based gradient descent framework for automatic prompt optimization. It uses LLM-generated feedback to iteratively improve prompts and outputs through gradient-like updates in text space.
+
+### Basic Usage
+
+```python
+from local_ai_manager.textgrad import Variable, TextualGradientEngine
+
+# Create variables with initial values
+prompt = Variable(
+    value="Explain quantum computing to a 10-year-old:",
+    role_description="instruction",
+    requires_grad=True
+)
+
+# Define a loss function using natural language feedback
+engine = TextualGradientEngine()
+
+# The engine evaluates and provides gradient feedback
+loss = engine.compute_loss(
+    prompt,
+    target="Clear, accurate explanation with examples",
+    evaluation_criteria=[
+        "Uses age-appropriate analogies",
+        "Avoids jargon without explanation",
+        "Includes concrete examples"
+    ]
+)
+
+# Apply gradients to improve the prompt
+prompt = engine.step(prompt, loss, learning_rate=0.1)
+print(prompt.value)  # Optimized prompt
+```
+
+### Workflow-Based Optimization
+
+For complex multi-step tasks, use the Workflow optimizer:
+
+```python
+from local_ai_manager.textgrad import WorkflowOptimizer
+
+workflow = WorkflowOptimizer()
+
+# Add optimization steps
+workflow.add_step(
+    name="brainstorm",
+    prompt="Generate 5 creative ideas for {topic}",
+    output_role="raw_ideas"
+)
+
+workflow.add_step(
+    name="refine",
+    prompt="Evaluate and improve these ideas: {brainstorm}",
+    output_role="refined_ideas",
+    feedback_prompt="Are these ideas novel and actionable?"
+)
+
+# Optimize the entire workflow
+result = workflow.optimize(
+    inputs={"topic": "sustainable packaging"},
+    num_iterations=3
+)
+```
+
+### Diff Editor
+
+Track changes between prompt iterations:
+
+```python
+from local_ai_manager.textgrad import DiffEditor
+
+editor = DiffEditor()
+
+# View changes between versions
+changes = editor.compare(before="Explain ML", after="Explain machine learning with examples")
+print(changes.summary)  # "Added context and specificity"
+```
+
+### Key Features
+
+- **Natural Language Gradients**: Uses LLM feedback instead of numerical gradients
+- **Variable Tracking**: Automatically tracks which outputs need optimization
+- **Multi-Step Workflows**: Chain multiple optimization steps
+- **Persistence**: Save and resume optimization sessions
+- **Diff Visualization**: See exactly what changed between iterations
+
+### Configuration
+
+```python
+from local_ai_manager.textgrad import TextualGradientConfig
+
+config = TextualGradientConfig(
+    llm_client=your_llm_client,  # Any OpenAI-compatible client
+    max_iterations=10,
+    convergence_threshold=0.01,
+    verbose=True
+)
+
+engine = TextualGradientEngine(config=config)
 ```
 
 ## Troubleshooting

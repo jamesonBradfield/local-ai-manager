@@ -46,7 +46,7 @@ dev = [
 ]
 
 [project.scripts]
-local-ai = "local_ai_manager.cli:main"
+local-ai = "local_ai_manager.cli:app"
 local-ai-server = "local_ai_manager.cli:server_cli"
 local-ai-steam = "local_ai_manager.cli:steam_cli"
 

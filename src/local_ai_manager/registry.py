@@ -33,7 +33,7 @@ class ModelRegistry:
         """Find a GGUF file matching the model definition."""
         for gguf_file in directory.glob("*.gguf"):
             if model_def.matches_file(gguf_file):
-                return gguf_file.resolve()
+                return (directory / gguf_file.name).resolve()
         return None
 
     def get_available_models(self) -> list[tuple[str, ModelDefinition, Path]]:

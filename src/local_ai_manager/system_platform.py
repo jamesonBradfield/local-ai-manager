@@ -355,8 +355,12 @@ class WindowsPlatform(PlatformInterface):
         return Path.home() / "AppData" / "Local" / "local-ai" / "logs"
 
     def get_default_config_dir(self) -> Path:
-        """Get config dir - use AppData/Roaming on Windows for portability."""
+        """Get config dir - check XDG_CONFIG_HOME first, then APPDATA on Windows."""
         import os
+
+        xdg_config = os.environ.get("XDG_CONFIG_HOME")
+        if xdg_config:
+            return Path(xdg_config) / "local-ai"
 
         if "APPDATA" in os.environ:
             return Path(os.environ["APPDATA"]) / "local-ai"

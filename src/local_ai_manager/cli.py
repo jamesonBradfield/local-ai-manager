@@ -12,7 +12,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .autostart import disable_autostart, enable_autostart, is_autostart_enabled
-from .config import create_default_config, load_config, save_config
+from .config import create_default_config, get_config_path, load_config, save_config
 from .registry import ModelRegistry
 from .server import LlamaServerManager
 from .steam_watcher import SteamWatcher
@@ -133,6 +133,9 @@ def start(
     extra_args: str = typer.Option(
         "", "--extra-args", "-e", help="Extra arguments for llama-server (quoted string)"
     ),
+    timeout: float = typer.Option(
+        0, "--timeout", "-t", help="Timeout in seconds for server to become ready (0=use config)"
+    ),
 ) -> None:
     """Start the llama-server with the specified model."""
     config = load_config()
@@ -188,21 +191,26 @@ def start(
     )
 
     # Start the server
+    server_timeout = timeout if timeout > 0 else None
+
+    # Build available models dict for speculative decoding
+    available_models = {
+        model_id: (m_def, m_path) for model_id, m_def, m_path in registry.get_available_models()
+    }
+
     if server.start(
         model_def,
         model_path,
         background=background,
         use_cache=not no_cache,
         extra_args=parsed_extra_args,
+        timeout=server_timeout,
+        available_models=available_models,
     ):
         if background:
             console.print("[green]Server started in background[/green]")
             console.print(f"  Logs: {config.server.log_dir}/llama-server-{model_id}.log")
-
-            if server.wait_for_ready(timeout=60):
-                console.print("[green]Server is ready![/green]")
-            else:
-                console.print("[yellow]Server starting... check logs[/yellow]")
+            console.print("[green]Server is ready![/green]")
         else:
             # Foreground mode - blocks until server exits
             pass
@@ -274,7 +282,7 @@ def config_init(
     force: bool = typer.Option(False, "--force", help="Overwrite existing config"),
 ) -> None:
     """Initialize default configuration file."""
-    config_path = Path.home() / ".config" / "local-ai" / "local-ai-config.json"
+    config_path = get_config_path()
 
     if config_path.exists() and not force:
         console.print(f"[yellow]Config already exists at {config_path}[/yellow]")
